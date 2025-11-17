@@ -1,11 +1,12 @@
 /* styles.css */
 
-#next-episode-button {
+#next-episode-button,
+#prev-episode-button {
     position: absolute;
     top: 0;
     left: 0;
-    width: 40px;
-    height: 23px;
+    width: 48px;
+    height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -13,10 +14,10 @@
     font-size: 14px;
     font-weight: 700;
     text-align: center;
-    line-height: 32px;
+    line-height: 24px;
     border-radius: 10px;
-    background: rgba(0, 0, 0, 0.7);
-    border: 0px solid rgba(255, 255, 255, 0.15);
+    background: rgba(0, 0, 0, 0.65);
+    border: 0 solid rgba(255, 255, 255, 0.15);
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
     opacity: 0.65;
     cursor: pointer;
@@ -25,7 +26,8 @@
     transition: background 0.1s linear, opacity 0.1s linear, transform 0.1s linear;
 }
 
-#next-episode-button svg {
+#next-episode-button svg,
+#prev-episode-button svg {
     width: 80%;
     height: 80%;
     align-content: center;
@@ -34,12 +36,18 @@
     pointer-events: none;
 }
 
-#next-episode-button:hover {
+#prev-episode-button svg {
+    transform: scaleX(-1);
+}
+
+#next-episode-button:hover,
+#prev-episode-button:hover {
     background: rgb(0, 173, 239);
 }
 
-#next-episode-button.is-disabled {
-    /* opacity: 0.4; */
+#next-episode-button.is-disabled,
+#prev-episode-button.is-disabled {
     cursor: default;
     pointer-events: none;
+    opacity: 0.4;
 }

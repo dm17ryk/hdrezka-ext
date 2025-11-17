@@ -5,6 +5,7 @@
   //debugger;
 
   let nextButton;
+  let prevButton;
   const observedEpisodes = new WeakSet();
   const LAYOUT_INTERVAL_MS = 800;
   const BUTTON_MARGIN_PX = 12;
@@ -15,6 +16,7 @@
       <path d="M5 5v14l8-7-8-7zm9 0v14h2V5h-2z"></path>
     </svg>
   `;
+  const PREV_ICON_SVG = NEXT_ICON_SVG;
   let observedPlayButton = null;
   let playButtonHoverHandlers = null;
 
@@ -32,7 +34,7 @@
             obs.disconnect();
             const newActiveEpisode = document.querySelector('.b-simple_episode__item.active');
             if (newActiveEpisode) {
-              setTimeout(setNextButtonText, 2000);
+              setTimeout(updateEpisodeButtons, 2000);
             }
           }
         }
@@ -61,19 +63,41 @@
     return 'No next episode available';
   }
 
-  function setNextButtonText() {
-    const nextEpisode = getNextEpisodeElement();
-    if (nextButton) {
-      const tooltip = getNextButtonTooltip(nextEpisode);
-      nextButton.title = tooltip;
-      nextButton.setAttribute('aria-label', tooltip);
-      nextButton.classList.toggle('is-disabled', !nextEpisode);
-      if (!nextEpisode) {
-        nextButton.dataset.isHovered = 'false';
-      }
-      updateButtonBackground();
+  function getPrevButtonTooltip(prevEpisode) {
+    let season = null;
+    let episode = null;
+    if (
+      prevEpisode &&
+      prevEpisode.hasAttribute('data-season_id') &&
+      prevEpisode.hasAttribute('data-episode_id')
+    ) {
+      season = prevEpisode.getAttribute('data-season_id');
+      episode = prevEpisode.getAttribute('data-episode_id');
     }
+    if (season && episode) {
+      return `Play previous episode S${ season }:E${ episode }`;
+    }
+    return 'No previous episode available';
+  }
+
+  function updateEpisodeButtons() {
+    updateEpisodeButton(prevButton, getPreviousEpisodeElement, getPrevButtonTooltip);
+    updateEpisodeButton(nextButton, getNextEpisodeElement, getNextButtonTooltip);
     attachObserverToActive();
+  }
+
+  function updateEpisodeButton(button, getEpisodeFn, tooltipFn) {
+    if (!button) return;
+    const episode = getEpisodeFn();
+    const tooltip = tooltipFn(episode);
+    button.title = tooltip;
+    button.setAttribute('aria-label', tooltip);
+    const isDisabled = !episode;
+    button.classList.toggle('is-disabled', isDisabled);
+    if (isDisabled) {
+      button.dataset.isHovered = 'false';
+    }
+    updateButtonBackground(button);
   }
 
   function getNextEpisodeElement() {
@@ -93,16 +117,43 @@
     return nextEpisode && nextEpisode.classList.contains('b-simple_episode__item') ? nextEpisode : null;
   }
 
+  function getPreviousEpisodeElement() {
+    const activeEpisode = document.querySelector('.b-simple_episode__item.active');
+    if (!activeEpisode) return null;
+
+    let prevEpisode = activeEpisode.previousElementSibling;
+    if (!prevEpisode) {
+      const currentSeasonList = activeEpisode.parentElement;
+      const prevSeasonList = currentSeasonList && currentSeasonList.previousElementSibling;
+      if (prevSeasonList && prevSeasonList.classList.contains('b-simple_episodes__list')) {
+        prevSeasonList.style.display = 'block';
+        currentSeasonList.style.display = 'none';
+        const episodes = prevSeasonList.querySelectorAll('.b-simple_episode__item');
+        prevEpisode = episodes[episodes.length - 1] || null;
+      }
+    }
+    return prevEpisode && prevEpisode.classList.contains('b-simple_episode__item') ? prevEpisode : null;
+  }
+
+  function navigateToPreviousEpisode() {
+    const prevEpisode = getPreviousEpisodeElement();
+    if (prevEpisode) {
+      prevEpisode.click();
+      setTimeout(updateEpisodeButtons, 2000);
+      setTimeout(startEpisodePlayback, 2000);
+    }
+  }
+
   function navigateToNextEpisode() {
     const nextEpisode = getNextEpisodeElement();
     if (nextEpisode) {
       nextEpisode.click();
-      setTimeout(setNextButtonText, 2000);
-      setTimeout(startNextEpisode, 2000);
+      setTimeout(updateEpisodeButtons, 2000);
+      setTimeout(startEpisodePlayback, 2000);
     }
   }
 
-  function startNextEpisode() {
+  function startEpisodePlayback() {
     const player = document.getElementById('oframecdnplayer');
     if (!player) return;
     const descendants = player.childNodes;
@@ -112,28 +163,39 @@
     }
   }
 
-  function createNextButton() {
-    nextButton = document.createElement('pjsdiv');
-    nextButton.id = 'next-episode-button';
-    nextButton.innerHTML = NEXT_ICON_SVG;
-    nextButton.title = 'Play next episode';
-    nextButton.setAttribute('aria-label', 'Play next episode');
-    nextButton.dataset.isHovered = 'false';
-    nextButton.addEventListener('click', navigateToNextEpisode);
-    setNextButtonText();
-
-    const playerElement = document.getElementById('oframecdnplayer');
-    if (playerElement) {
-      playerElement.appendChild(nextButton);
-    } else {
-      document.body.appendChild(nextButton);
-    }
-
-    applyButtonStyles();
+  function createEpisodeButton(id, iconSvg, handler) {
+    const button = document.createElement('pjsdiv');
+    button.id = id;
+    button.innerHTML = iconSvg;
+    button.dataset.isHovered = 'false';
+    button.setAttribute('aria-label', '');
+    button.addEventListener('click', handler);
+    return button;
   }
 
-  function applyButtonStyles(controlInfo) {
-    if (!nextButton) return;
+  function mountEpisodeButton(button) {
+    const playerElement = document.getElementById('oframecdnplayer');
+    if (playerElement) {
+      playerElement.appendChild(button);
+    } else {
+      document.body.appendChild(button);
+    }
+    applyButtonStyles(undefined, button);
+  }
+
+  function createPrevButton() {
+    prevButton = createEpisodeButton('prev-episode-button', PREV_ICON_SVG, navigateToPreviousEpisode);
+    mountEpisodeButton(prevButton);
+  }
+
+  function createNextButton() {
+    nextButton = createEpisodeButton('next-episode-button', NEXT_ICON_SVG, navigateToNextEpisode);
+    mountEpisodeButton(nextButton);
+  }
+
+  function applyButtonStyles(controlInfo, targetButton = nextButton) {
+    const button = targetButton || nextButton;
+    if (!button) return;
     const info = controlInfo === undefined ? getPlayControlInfo() : controlInfo;
     const timelineColors = getTimelineColors();
     const baseColor = timelineColors.base;
@@ -144,24 +206,24 @@
       if (styles.borderRadius && styles.borderRadius !== '0px') {
         const adjustedRadius = adjustBorderRadius(styles.borderRadius, 2);
         if (adjustedRadius) {
-          nextButton.style.borderRadius = adjustedRadius;
+          button.style.borderRadius = adjustedRadius;
         }
       }
       if (styles.border && styles.border !== '0px none rgb(0, 0, 0)') {
-        nextButton.style.border = styles.border;
+        button.style.border = styles.border;
       }
       if (styles.boxShadow && styles.boxShadow !== 'none') {
-        nextButton.style.boxShadow = styles.boxShadow;
+        button.style.boxShadow = styles.boxShadow;
       }
-      nextButton.style.color = info.iconColor || '#fff';
+      button.style.color = info.iconColor || '#fff';
     } else {
-      nextButton.style.borderRadius = '12px';
-      nextButton.style.border = '1px solid rgba(255, 255, 255, 0.15)';
-      nextButton.style.boxShadow = '0 0 0 1px rgba(0, 0, 0, 0.4)';
-      nextButton.style.color = '#fff';
+      button.style.borderRadius = '12px';
+      button.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+      button.style.boxShadow = '0 0 0 1px rgba(0, 0, 0, 0.4)';
+      button.style.color = '#fff';
     }
 
-    setButtonColors(baseColor, hoverColor);
+    setButtonColors(button, baseColor, hoverColor);
   }
 
   function getGearContainer() {
@@ -180,9 +242,12 @@
 
   function ensureAttached() {
     const playerElement = document.getElementById('oframecdnplayer');
-    if (playerElement && nextButton && nextButton.parentElement !== playerElement) {
-      playerElement.appendChild(nextButton);
-    }
+    if (!playerElement) return;
+    [prevButton, nextButton].forEach((button) => {
+      if (button && button.parentElement !== playerElement) {
+        playerElement.appendChild(button);
+      }
+    });
   }
 
   function getPlayerChildFromNode(node) {
@@ -272,8 +337,12 @@
       requestAnimationFrame(() => {
         const color = extractColor(getComputedStyle(element).backgroundColor);
         if (color) {
-          nextButton.dataset.nextButtonHoverColor = color;
-          updateButtonBackground();
+          [prevButton, nextButton].forEach((button) => {
+            if (button) {
+              button.dataset.nextButtonHoverColor = color;
+              updateButtonBackground(button);
+            }
+          });
         }
       });
     };
@@ -282,8 +351,12 @@
       requestAnimationFrame(() => {
         const color = extractColor(getComputedStyle(element).backgroundColor);
         if (color) {
-          nextButton.dataset.nextButtonBaseColor = color;
-          updateButtonBackground();
+          [prevButton, nextButton].forEach((button) => {
+            if (button) {
+              button.dataset.nextButtonBaseColor = color;
+              updateButtonBackground(button);
+            }
+          });
         }
       });
     };
@@ -352,13 +425,14 @@
     return opacity > 0.05;
   }
 
-  function setButtonSize(width, height) {
-    if (!nextButton) return { width: 0, height: 0 };
+  function setButtonSize(width, height, targetButton = nextButton) {
+    const button = targetButton || nextButton;
+    if (!button) return { width: 0, height: 0 };
     const clampedWidth = Math.max(24, Math.min(120, Math.round(width || 32)));
     const clampedHeight = Math.max(24, Math.min(120, Math.round(height || clampedWidth)));
-    nextButton.style.width = `${ clampedWidth }px`;
-    nextButton.style.height = `${ clampedHeight }px`;
-    nextButton.style.lineHeight = `${ clampedHeight }px`;
+    button.style.width = `${ clampedWidth }px`;
+    button.style.height = `${ clampedHeight }px`;
+    button.style.lineHeight = `${ clampedHeight }px`;
     return { width: clampedWidth, height: clampedHeight };
   }
 
@@ -385,40 +459,43 @@
     return adjustSegment(radius);
   }
 
-  function setButtonColors(baseColor, hoverColor) {
-    if (!nextButton) return;
+  function setButtonColors(targetButton, baseColor, hoverColor) {
+    const button = targetButton || nextButton;
+    if (!button) return;
     const normal = baseColor || 'rgb(23, 35, 34)';
     const hover = hoverColor || 'rgba(29, 174, 236, 0.7)';
-    nextButton.dataset.nextButtonBaseColor = normal;
-    nextButton.dataset.nextButtonHoverColor = hover;
-    updateButtonBackground();
-    ensureHoverHandlers();
+    button.dataset.nextButtonBaseColor = normal;
+    button.dataset.nextButtonHoverColor = hover;
+    updateButtonBackground(button);
+    ensureHoverHandlers(button);
   }
 
-  function ensureHoverHandlers() {
-    if (!nextButton || nextButton.dataset.hoverHandlerAttached === 'true') {
+  function ensureHoverHandlers(targetButton = nextButton) {
+    const button = targetButton || nextButton;
+    if (!button || button.dataset.hoverHandlerAttached === 'true') {
       return;
     }
-    nextButton.addEventListener('mouseenter', () => {
-      if (nextButton.classList.contains('is-disabled')) return;
-      nextButton.dataset.isHovered = 'true';
-      updateButtonBackground();
+    button.addEventListener('mouseenter', () => {
+      if (button.classList.contains('is-disabled')) return;
+      button.dataset.isHovered = 'true';
+      updateButtonBackground(button);
     });
-    nextButton.addEventListener('mouseleave', () => {
-      nextButton.dataset.isHovered = 'false';
-      updateButtonBackground();
+    button.addEventListener('mouseleave', () => {
+      button.dataset.isHovered = 'false';
+      updateButtonBackground(button);
     });
-    nextButton.dataset.hoverHandlerAttached = 'true';
+    button.dataset.hoverHandlerAttached = 'true';
   }
 
-  function updateButtonBackground() {
-    if (!nextButton) return;
-    const hovered = nextButton.dataset.isHovered === 'true';
-    const baseColor = nextButton.dataset.nextButtonBaseColor;
-    const hoverColor = nextButton.dataset.nextButtonHoverColor;
+  function updateButtonBackground(targetButton = nextButton) {
+    const button = targetButton || nextButton;
+    if (!button) return;
+    const hovered = button.dataset.isHovered === 'true';
+    const baseColor = button.dataset.nextButtonBaseColor;
+    const hoverColor = button.dataset.nextButtonHoverColor;
     const targetColor = hovered ? (hoverColor || baseColor) : baseColor;
     if (targetColor) {
-      nextButton.style.backgroundColor = targetColor;
+      button.style.backgroundColor = targetColor;
     }
   }
 
@@ -446,14 +523,16 @@
     return rect.width > 0 && rect.height > 0;
   }
 
-  function positionNextButton() {
-    if (!nextButton) return;
+  function positionEpisodeButtons() {
+    if (!nextButton || !prevButton) return;
     ensureAttached();
 
     const playerElement = document.getElementById('oframecdnplayer');
     const timelineElement = document.getElementById('cdnplayer_control_timeline');
     if (!playerElement || !timelineElement) {
-      nextButton.style.display = 'none';
+      [prevButton, nextButton].forEach((button) => {
+        if (button) button.style.display = 'none';
+      });
       return;
     }
 
@@ -464,47 +543,64 @@
     }
     const controlsVisible = areControlsVisible(timelineElement, playInfo);
     if (!controlsVisible) {
-      nextButton.style.display = 'none';
+      [prevButton, nextButton].forEach((button) => {
+        if (button) button.style.display = 'none';
+      });
       return;
     }
 
     if (playInfo) {
-      applyButtonStyles(playInfo);
-      const { width, height } = setButtonSize(playInfo.rect.width, playInfo.rect.height);
-      const left = playInfo.rect.left - playerRect.left - 2;
-      const top = playInfo.rect.top - playerRect.top - height - BUTTON_MARGIN_PX + 3;
-      nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, left) - 1 }px`;
+      [prevButton, nextButton].forEach((button) => applyButtonStyles(playInfo, button));
+      const nextSize = setButtonSize(playInfo.rect.width, playInfo.rect.height, nextButton);
+      const prevSize = setButtonSize(playInfo.rect.width, playInfo.rect.height, prevButton);
+      const nextLeft = playInfo.rect.left - playerRect.left - 2;
+      const top = playInfo.rect.top - playerRect.top - nextSize.height - BUTTON_MARGIN_PX + 3;
+      const prevLeft = nextLeft - prevSize.width - BUTTON_MARGIN_PX;
+
+      nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, nextLeft) + 72 }px`;
       nextButton.style.top = `${ Math.max(0, top) }px`;
+      prevButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, prevLeft) - 2 }px`;
+      prevButton.style.top = `${ Math.max(0, top) }px`;
       nextButton.style.display = 'block';
+      prevButton.style.display = 'block';
       return;
     }
 
     detachPlayButtonHover();
-    applyButtonStyles(null);
+    [prevButton, nextButton].forEach((button) => applyButtonStyles(null, button));
     const fallbackDimension = (nextButton.offsetWidth || parseFloat(nextButton.style.width)) || 32;
-    const { width: fallbackWidth, height: fallbackHeight } = setButtonSize(fallbackDimension, fallbackDimension);
+    const { width: fallbackWidth, height: fallbackHeight } =
+      setButtonSize(fallbackDimension, fallbackDimension, nextButton);
+    setButtonSize(fallbackDimension, fallbackDimension, prevButton);
     reserveTimelineSpace();
 
     const { element: anchorElement, placeBefore } = getPreferredAnchor(timelineElement);
     const anchorNode = anchorElement || timelineElement;
     const anchorRect = anchorNode.getBoundingClientRect();
 
-    const left = placeBefore
+    const nextLeft = placeBefore
       ? anchorRect.left - playerRect.left - fallbackWidth - BUTTON_MARGIN_PX
       : anchorRect.right - playerRect.left + BUTTON_MARGIN_PX;
     const top = anchorRect.top - playerRect.top + (anchorRect.height - fallbackHeight) / 2;
 
-    nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, left) }px`;
+    const prevLeft = nextLeft - fallbackWidth - BUTTON_MARGIN_PX;
+
+    nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, nextLeft) }px`;
     nextButton.style.top = `${ Math.max(0, top) }px`;
+    prevButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, prevLeft) }px`;
+    prevButton.style.top = `${ Math.max(0, top) }px`;
     nextButton.style.display = 'block';
+    prevButton.style.display = 'block';
   }
 
   function init() {
+    createPrevButton();
     createNextButton();
-    positionNextButton();
-    setInterval(positionNextButton, LAYOUT_INTERVAL_MS);
-    window.addEventListener('resize', positionNextButton);
-    document.addEventListener('fullscreenchange', positionNextButton);
+    updateEpisodeButtons();
+    positionEpisodeButtons();
+    setInterval(positionEpisodeButtons, LAYOUT_INTERVAL_MS);
+    window.addEventListener('resize', positionEpisodeButtons);
+    document.addEventListener('fullscreenchange', positionEpisodeButtons);
   }
 
   init();
