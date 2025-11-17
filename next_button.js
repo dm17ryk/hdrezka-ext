@@ -471,9 +471,9 @@
     if (playInfo) {
       applyButtonStyles(playInfo);
       const { width, height } = setButtonSize(playInfo.rect.width, playInfo.rect.height);
-      const left = playInfo.rect.left - playerRect.left - 1;
+      const left = playInfo.rect.left - playerRect.left - 2;
       const top = playInfo.rect.top - playerRect.top - height - BUTTON_MARGIN_PX + 3;
-      nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, left) }px`;
+      nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, left) - 1 }px`;
       nextButton.style.top = `${ Math.max(0, top) }px`;
       nextButton.style.display = 'block';
       return;
