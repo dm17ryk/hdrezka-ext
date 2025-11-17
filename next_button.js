@@ -9,6 +9,12 @@
   const LAYOUT_INTERVAL_MS = 800;
   const BUTTON_MARGIN_PX = 12;
   const TIMELINE_PADDING_PX = 110;
+  const PLAY_SVG_IDENTIFIER = '0.59375 0.48438';
+  const NEXT_ICON_SVG = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M5 5v14l8-7-8-7zm9 0v14h2V5h-2z"></path>
+    </svg>
+  `;
 
   function attachObserverToActive() {
     const activeEpisode = document.querySelector('.b-simple_episode__item.active');
@@ -56,11 +62,14 @@
   function setNextButtonText() {
     const nextEpisode = getNextEpisodeElement();
     if (nextButton) {
-      nextButton.textContent = '>>';
       const tooltip = getNextButtonTooltip(nextEpisode);
       nextButton.title = tooltip;
       nextButton.setAttribute('aria-label', tooltip);
       nextButton.classList.toggle('is-disabled', !nextEpisode);
+      if (!nextEpisode) {
+        nextButton.dataset.isHovered = 'false';
+      }
+      updateButtonBackground();
     }
     attachObserverToActive();
   }
@@ -104,9 +113,10 @@
   function createNextButton() {
     nextButton = document.createElement('pjsdiv');
     nextButton.id = 'next-episode-button';
-    nextButton.textContent = '>>';
+    nextButton.innerHTML = NEXT_ICON_SVG;
     nextButton.title = 'Play next episode';
     nextButton.setAttribute('aria-label', 'Play next episode');
+    nextButton.dataset.isHovered = 'false';
     nextButton.addEventListener('click', navigateToNextEpisode);
     setNextButtonText();
 
@@ -120,32 +130,33 @@
     applyButtonStyles();
   }
 
-  function applyButtonStyles() {
-    const timeline = document.getElementById('cdnplayer_control_timeline');
-    if (!timeline) {
-      setTimeout(applyButtonStyles, 500);
-      return;
-    }
-    const descendants = timeline.getElementsByTagName('pjsdiv');
-    const firstChild = descendants[0];
-    let backgroundColor = 'rgb(23, 35, 34)';
-    if (firstChild) {
-      backgroundColor = getComputedStyle(firstChild).backgroundColor || backgroundColor;
-    }
-    nextButton.style.backgroundColor = backgroundColor;
-    nextButton.style.color = '#fff';
+  function applyButtonStyles(controlInfo) {
+    if (!nextButton) return;
+    const info = controlInfo === undefined ? getPlayControlInfo() : controlInfo;
+    const timelineColors = getTimelineColors();
+    const baseColor = timelineColors.base;
+    const hoverColor = timelineColors.hover;
 
-    const hoverElement = descendants[4];
-    if (hoverElement) {
-      const hoverStyles = getComputedStyle(hoverElement);
-      const hoverColor = hoverStyles.backgroundColor || 'rgb(0, 173, 239)';
-      nextButton.addEventListener('mouseenter', () => {
-        nextButton.style.backgroundColor = hoverColor;
-      });
-      nextButton.addEventListener('mouseleave', () => {
-        nextButton.style.backgroundColor = backgroundColor;
-      });
+    if (info && info.styles) {
+      const styles = info.styles;
+      if (styles.borderRadius && styles.borderRadius !== '0px') {
+        nextButton.style.borderRadius = styles.borderRadius;
+      }
+      if (styles.border && styles.border !== '0px none rgb(0, 0, 0)') {
+        nextButton.style.border = styles.border;
+      }
+      if (styles.boxShadow && styles.boxShadow !== 'none') {
+        nextButton.style.boxShadow = styles.boxShadow;
+      }
+      nextButton.style.color = info.iconColor || '#fff';
+    } else {
+      nextButton.style.borderRadius = '3px';
+      nextButton.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+      nextButton.style.boxShadow = '0 0 0 1px rgba(0, 0, 0, 0.4)';
+      nextButton.style.color = '#fff';
     }
+
+    setButtonColors(baseColor, hoverColor);
   }
 
   function getGearContainer() {
@@ -189,17 +200,134 @@
     return volumePath ? getPlayerChildFromNode(volumePath) : null;
   }
 
-  function getPlayButtonRect() {
+  function getPlayButtonElement() {
     const playerElement = document.getElementById('oframecdnplayer');
     if (!playerElement) return null;
     const playSvg = Array.from(playerElement.querySelectorAll('svg')).find((svg) =>
-      svg.innerHTML.includes('0.59375 0.48438')
+      svg.innerHTML.includes(PLAY_SVG_IDENTIFIER)
     );
     if (!playSvg) return null;
     const playWrapper = playSvg.closest('pjsdiv');
     if (!playWrapper) return null;
-    const rect = playWrapper.getBoundingClientRect();
+
+    const candidates = new Set();
+    const collect = (node) => {
+      if (node) {
+        candidates.add(node);
+        node.querySelectorAll && node.querySelectorAll('pjsdiv').forEach((child) => candidates.add(child));
+      }
+    };
+    collect(playWrapper);
+    collect(playWrapper.parentElement);
+    collect(playWrapper.previousElementSibling);
+    collect(playWrapper.parentElement ? playWrapper.parentElement.previousElementSibling : null);
+
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const rect = candidate.getBoundingClientRect();
+      const styles = getComputedStyle(candidate);
+      if (rect.width >= 20 && rect.height >= 20 && styles.pointerEvents !== 'none') {
+        return candidate;
+      }
+    }
+
+    return playWrapper;
+  }
+
+  function getPlayButtonRect() {
+    const element = getPlayButtonElement();
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0 ? rect : null;
+  }
+
+  function getPlayControlInfo() {
+    const playerElement = document.getElementById('oframecdnplayer');
+    if (!playerElement) return null;
+    const playSvg = Array.from(playerElement.querySelectorAll('svg')).find((svg) =>
+      svg.innerHTML.includes(PLAY_SVG_IDENTIFIER)
+    );
+    if (!playSvg) return null;
+    const playElement = getPlayButtonElement();
+    if (!playElement) return null;
+    const rect = playElement.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const styles = getComputedStyle(playElement);
+    const shape = playSvg.querySelector('polyline, polygon, path');
+    const iconColor = shape ? (shape.getAttribute('fill') || getComputedStyle(shape).fill) : null;
+    return { element: playElement, rect, styles, iconColor };
+  }
+
+  function getTimelineColors() {
+    const timeline = document.getElementById('cdnplayer_control_timeline');
+    let base = 'rgb(23, 35, 34)';
+    let hover = 'rgb(0, 173, 239)';
+    if (timeline) {
+      const descendants = timeline.getElementsByTagName('pjsdiv');
+      const firstChild = descendants[0];
+      if (firstChild) {
+        base = getComputedStyle(firstChild).backgroundColor || base;
+      }
+      const hoverElement = descendants[4];
+      if (hoverElement) {
+        hover = getComputedStyle(hoverElement).backgroundColor || hover;
+      }
+    }
+    return { base, hover };
+  }
+
+  function areControlsVisible(timelineElement) {
+    if (!timelineElement) return false;
+    const styles = getComputedStyle(timelineElement);
+    if (styles.display === 'none') return false;
+    const opacity = parseFloat(styles.opacity || '1');
+    return opacity > 0.05;
+  }
+
+  function setButtonSize(size) {
+    if (!nextButton) return 0;
+    const clampedSize = Math.max(24, Math.min(48, Math.round(size)));
+    nextButton.style.width = `${ clampedSize }px`;
+    nextButton.style.height = `${ clampedSize }px`;
+    nextButton.style.lineHeight = `${ clampedSize }px`;
+    return clampedSize;
+  }
+
+  function setButtonColors(baseColor, hoverColor) {
+    if (!nextButton) return;
+    const normal = baseColor || 'rgb(23, 35, 34)';
+    const hover = hoverColor || 'rgb(0, 173, 239)';
+    nextButton.dataset.nextButtonBaseColor = normal;
+    nextButton.dataset.nextButtonHoverColor = hover;
+    updateButtonBackground();
+    ensureHoverHandlers();
+  }
+
+  function ensureHoverHandlers() {
+    if (!nextButton || nextButton.dataset.hoverHandlerAttached === 'true') {
+      return;
+    }
+    nextButton.addEventListener('mouseenter', () => {
+      if (nextButton.classList.contains('is-disabled')) return;
+      nextButton.dataset.isHovered = 'true';
+      updateButtonBackground();
+    });
+    nextButton.addEventListener('mouseleave', () => {
+      nextButton.dataset.isHovered = 'false';
+      updateButtonBackground();
+    });
+    nextButton.dataset.hoverHandlerAttached = 'true';
+  }
+
+  function updateButtonBackground() {
+    if (!nextButton) return;
+    const hovered = nextButton.dataset.isHovered === 'true';
+    const baseColor = nextButton.dataset.nextButtonBaseColor;
+    const hoverColor = nextButton.dataset.nextButtonHoverColor;
+    const targetColor = hovered ? (hoverColor || baseColor) : baseColor;
+    if (targetColor) {
+      nextButton.style.backgroundColor = targetColor;
+    }
   }
 
   function getPreferredAnchor(timelineElement) {
@@ -232,33 +360,42 @@
 
     const playerElement = document.getElementById('oframecdnplayer');
     const timelineElement = document.getElementById('cdnplayer_control_timeline');
-    if (!playerElement || !timelineElement) return;
+    if (!playerElement || !timelineElement) {
+      nextButton.style.display = 'none';
+      return;
+    }
+
+    const controlsVisible = areControlsVisible(timelineElement);
+    if (!controlsVisible) {
+      nextButton.style.display = 'none';
+      return;
+    }
 
     const playerRect = playerElement.getBoundingClientRect();
-    const timelineRect = timelineElement.getBoundingClientRect();
-    const buttonWidth = nextButton.offsetWidth || 24;
-    const buttonHeight = nextButton.offsetHeight || 24;
-
-    const playRect = getPlayButtonRect();
-    const spaceBetween = playRect ? timelineRect.left - playRect.right : 0;
-    if (playRect && spaceBetween >= buttonWidth + BUTTON_MARGIN_PX) {
-      const left = playRect.right - playerRect.left + BUTTON_MARGIN_PX;
-      const top = playRect.top - playerRect.top + (playRect.height - buttonHeight) / 2;
+    const playInfo = getPlayControlInfo();
+    if (playInfo) {
+      applyButtonStyles(playInfo);
+      const actualSize = setButtonSize(Math.max(playInfo.rect.width, playInfo.rect.height));
+      const left = playInfo.rect.left - playerRect.left;
+      const top = playInfo.rect.top - playerRect.top - actualSize - BUTTON_MARGIN_PX;
       nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, left) }px`;
       nextButton.style.top = `${ Math.max(0, top) }px`;
       nextButton.style.display = 'block';
       return;
     }
 
+    applyButtonStyles(null);
+    const fallbackSize = setButtonSize((nextButton.offsetWidth || parseFloat(nextButton.style.width)) || 32);
     reserveTimelineSpace();
 
     const { element: anchorElement, placeBefore } = getPreferredAnchor(timelineElement);
-    const anchorRect = (anchorElement || timelineElement).getBoundingClientRect();
+    const anchorNode = anchorElement || timelineElement;
+    const anchorRect = anchorNode.getBoundingClientRect();
 
     const left = placeBefore
-      ? anchorRect.left - playerRect.left - buttonWidth - BUTTON_MARGIN_PX
+      ? anchorRect.left - playerRect.left - fallbackSize - BUTTON_MARGIN_PX
       : anchorRect.right - playerRect.left + BUTTON_MARGIN_PX;
-    const top = anchorRect.top - playerRect.top + (anchorRect.height - buttonHeight) / 2;
+    const top = anchorRect.top - playerRect.top + (anchorRect.height - fallbackSize) / 2;
 
     nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, left) }px`;
     nextButton.style.top = `${ Math.max(0, top) }px`;
@@ -270,6 +407,7 @@
     positionNextButton();
     setInterval(positionNextButton, LAYOUT_INTERVAL_MS);
     window.addEventListener('resize', positionNextButton);
+    document.addEventListener('fullscreenchange', positionNextButton);
   }
 
   init();
