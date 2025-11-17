@@ -2,22 +2,33 @@
 
 #next-episode-button {
     position: absolute;
-    bottom: 50px;
-    right: 10px;
-    color: #fff;
-    padding: 10px 15px;
-    z-index: 2147483647;
+    top: 0;
+    left: 0;
+    width: 22px;
+    height: 22px;
     display: block;
-    font-size: 16px;
-    border-radius: 2.3px;
-    background: rgb(23, 35, 34);
-    opacity: 0.7;
-    transition: opacity 0.1s linear, background 0.1s linear, transform 0.1s linear;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+    line-height: 22px;
+    border-radius: 2px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+    opacity: 0.95;
     cursor: pointer;
     pointer-events: auto;
-    transform: scale(1.0);
+    z-index: 2147483647;
+    transition: background 0.1s linear, opacity 0.1s linear, transform 0.1s linear;
 }
 
 #next-episode-button:hover {
-    background-color: rgb(0, 173, 239);
+    background: rgb(0, 173, 239);
+}
+
+#next-episode-button.is-disabled {
+    opacity: 0.4;
+    cursor: default;
+    pointer-events: none;
 }
