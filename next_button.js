@@ -142,7 +142,10 @@
     if (info && info.styles) {
       const styles = info.styles;
       if (styles.borderRadius && styles.borderRadius !== '0px') {
-        nextButton.style.borderRadius = styles.borderRadius;
+        const adjustedRadius = adjustBorderRadius(styles.borderRadius, 2);
+        if (adjustedRadius) {
+          nextButton.style.borderRadius = adjustedRadius;
+        }
       }
       if (styles.border && styles.border !== '0px none rgb(0, 0, 0)') {
         nextButton.style.border = styles.border;
@@ -152,7 +155,7 @@
       }
       nextButton.style.color = info.iconColor || '#fff';
     } else {
-      nextButton.style.borderRadius = '3px';
+      nextButton.style.borderRadius = '12px';
       nextButton.style.border = '1px solid rgba(255, 255, 255, 0.15)';
       nextButton.style.boxShadow = '0 0 0 1px rgba(0, 0, 0, 0.4)';
       nextButton.style.color = '#fff';
@@ -359,6 +362,29 @@
     return { width: clampedWidth, height: clampedHeight };
   }
 
+  function adjustBorderRadius(radius, deltaPx) {
+    if (!radius || radius === '0px') return null;
+    const adjustSegment = (segment) =>
+      segment
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((value) => {
+          const numeric = parseFloat(value);
+          if (Number.isNaN(numeric)) {
+            return value;
+          }
+          return `${ Math.max(0, numeric + deltaPx) }px`;
+        })
+        .join(' ');
+
+    if (radius.includes('/')) {
+      const [first, second] = radius.split('/');
+      return `${ adjustSegment(first) } / ${ adjustSegment(second || first) }`;
+    }
+    return adjustSegment(radius);
+  }
+
   function setButtonColors(baseColor, hoverColor) {
     if (!nextButton) return;
     const normal = baseColor || 'rgb(23, 35, 34)';
@@ -445,8 +471,8 @@
     if (playInfo) {
       applyButtonStyles(playInfo);
       const { width, height } = setButtonSize(playInfo.rect.width, playInfo.rect.height);
-      const left = playInfo.rect.left - playerRect.left;
-      const top = playInfo.rect.top - playerRect.top - height - BUTTON_MARGIN_PX;
+      const left = playInfo.rect.left - playerRect.left - 1;
+      const top = playInfo.rect.top - playerRect.top - height - BUTTON_MARGIN_PX + 3;
       nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, left) }px`;
       nextButton.style.top = `${ Math.max(0, top) }px`;
       nextButton.style.display = 'block';
@@ -455,8 +481,8 @@
 
     detachPlayButtonHover();
     applyButtonStyles(null);
-    const { width: fallbackWidth, height: fallbackHeight } =
-      setButtonSize((nextButton.offsetWidth || parseFloat(nextButton.style.width)) || 32);
+    const fallbackDimension = (nextButton.offsetWidth || parseFloat(nextButton.style.width)) || 32;
+    const { width: fallbackWidth, height: fallbackHeight } = setButtonSize(fallbackDimension, fallbackDimension);
     reserveTimelineSpace();
 
     const { element: anchorElement, placeBefore } = getPreferredAnchor(timelineElement);
