@@ -557,7 +557,7 @@
       const top = playInfo.rect.top - playerRect.top - nextSize.height - BUTTON_MARGIN_PX + 3;
       const prevLeft = nextLeft - prevSize.width - BUTTON_MARGIN_PX;
 
-      nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, nextLeft) + 72 }px`;
+      nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, nextLeft) + 71 }px`;
       nextButton.style.top = `${ Math.max(0, top) }px`;
       prevButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, prevLeft) - 2 }px`;
       prevButton.style.top = `${ Math.max(0, top) }px`;
