@@ -2,6 +2,7 @@
 
 (function() {
   console.log('Content script reloaded');
+  //debugger;
 
   let nextButton;
   const observedEpisodes = new WeakSet();
@@ -150,7 +151,8 @@
   function getGearContainer() {
     const settingsPanel = document.getElementById('cdnplayer_settings');
     if (!settingsPanel) return null;
-    return settingsPanel.parentElement ? settingsPanel.parentElement.previousElementSibling : null;
+    const gearElement = settingsPanel.parentElement ? settingsPanel.parentElement.previousElementSibling : null;
+    return gearElement ? getPlayerChildFromNode(gearElement) : null;
   }
 
   function reserveTimelineSpace() {
@@ -167,6 +169,63 @@
     }
   }
 
+  function getPlayerChildFromNode(node) {
+    const playerElement = document.getElementById('oframecdnplayer');
+    if (!playerElement || !node) return null;
+    let current = node;
+    while (current && current !== playerElement) {
+      if (current.parentElement === playerElement) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+    return null;
+  }
+
+  function getVolumeContainer() {
+    const volumePath =
+      document.getElementById('pjs_cdnplayercontrol_mutevolume_element1') ||
+      document.getElementById('pjs_cdnplayercontrol_mutevolume_element2');
+    return volumePath ? getPlayerChildFromNode(volumePath) : null;
+  }
+
+  function getPlayButtonRect() {
+    const playerElement = document.getElementById('oframecdnplayer');
+    if (!playerElement) return null;
+    const playSvg = Array.from(playerElement.querySelectorAll('svg')).find((svg) =>
+      svg.innerHTML.includes('0.59375 0.48438')
+    );
+    if (!playSvg) return null;
+    const playWrapper = playSvg.closest('pjsdiv');
+    if (!playWrapper) return null;
+    const rect = playWrapper.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? rect : null;
+  }
+
+  function getPreferredAnchor(timelineElement) {
+    const volumeContainer = getVolumeContainer();
+    if (volumeContainer && isElementVisible(volumeContainer)) {
+      return { element: volumeContainer, placeBefore: true };
+    }
+
+    const gearContainer = getGearContainer();
+    if (gearContainer && isElementVisible(gearContainer)) {
+      return { element: gearContainer, placeBefore: true };
+    }
+
+    return { element: timelineElement, placeBefore: false };
+  }
+
+  function isElementVisible(element) {
+    if (!element) return false;
+    const styles = getComputedStyle(element);
+    if (styles.display === 'none' || styles.visibility === 'hidden' || parseFloat(styles.opacity || '1') === 0) {
+      return false;
+    }
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
   function positionNextButton() {
     if (!nextButton) return;
     ensureAttached();
@@ -175,28 +234,30 @@
     const timelineElement = document.getElementById('cdnplayer_control_timeline');
     if (!playerElement || !timelineElement) return;
 
-    reserveTimelineSpace();
-
     const playerRect = playerElement.getBoundingClientRect();
     const timelineRect = timelineElement.getBoundingClientRect();
     const buttonWidth = nextButton.offsetWidth || 24;
     const buttonHeight = nextButton.offsetHeight || 24;
 
-    let anchorRect = timelineRect;
-    const gearContainer = getGearContainer();
-    if (gearContainer && getComputedStyle(gearContainer).display !== 'none') {
-      const gearRect = gearContainer.getBoundingClientRect();
-      if (gearRect.width > 0 && gearRect.height > 0) {
-        anchorRect = gearRect;
-      }
+    const playRect = getPlayButtonRect();
+    const spaceBetween = playRect ? timelineRect.left - playRect.right : 0;
+    if (playRect && spaceBetween >= buttonWidth + BUTTON_MARGIN_PX) {
+      const left = playRect.right - playerRect.left + BUTTON_MARGIN_PX;
+      const top = playRect.top - playerRect.top + (playRect.height - buttonHeight) / 2;
+      nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, left) }px`;
+      nextButton.style.top = `${ Math.max(0, top) }px`;
+      nextButton.style.display = 'block';
+      return;
     }
 
-    let left;
-    if (anchorRect === timelineRect) {
-      left = timelineRect.right - playerRect.left + BUTTON_MARGIN_PX;
-    } else {
-      left = anchorRect.left - playerRect.left - buttonWidth - BUTTON_MARGIN_PX;
-    }
+    reserveTimelineSpace();
+
+    const { element: anchorElement, placeBefore } = getPreferredAnchor(timelineElement);
+    const anchorRect = (anchorElement || timelineElement).getBoundingClientRect();
+
+    const left = placeBefore
+      ? anchorRect.left - playerRect.left - buttonWidth - BUTTON_MARGIN_PX
+      : anchorRect.right - playerRect.left + BUTTON_MARGIN_PX;
     const top = anchorRect.top - playerRect.top + (anchorRect.height - buttonHeight) / 2;
 
     nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, left) }px`;
