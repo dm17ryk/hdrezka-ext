@@ -276,9 +276,24 @@
     return { base, hover };
   }
 
-  function areControlsVisible(timelineElement) {
-    if (!timelineElement) return false;
-    const styles = getComputedStyle(timelineElement);
+  function areControlsVisible(timelineElement, playInfo) {
+    if (!timelineElement || !playInfo) return false;
+    const playerElement = document.getElementById('oframecdnplayer');
+    if (!playerElement) return false;
+    const timelineStyles = getComputedStyle(timelineElement);
+    const playStyles = getComputedStyle(playInfo.element);
+    const playParentStyles = playInfo.element.parentElement ? getComputedStyle(playInfo.element.parentElement) : null;
+
+    if (
+      playStyles.display === 'none' ||
+      playStyles.visibility === 'hidden' ||
+      parseFloat(playStyles.opacity || '1') === 0 ||
+      (playParentStyles && parseFloat(playParentStyles.opacity || '1') === 0)
+    ) {
+      return false;
+    }
+
+    const styles = timelineStyles;
     if (styles.display === 'none') return false;
     const opacity = parseFloat(styles.opacity || '1');
     return opacity > 0.05;
@@ -296,7 +311,7 @@
   function setButtonColors(baseColor, hoverColor) {
     if (!nextButton) return;
     const normal = baseColor || 'rgb(23, 35, 34)';
-    const hover = hoverColor || 'rgb(0, 173, 239)';
+    const hover = hoverColor || 'rgba(29, 174, 236, 0.7)';
     nextButton.dataset.nextButtonBaseColor = normal;
     nextButton.dataset.nextButtonHoverColor = hover;
     updateButtonBackground();
@@ -365,14 +380,14 @@
       return;
     }
 
-    const controlsVisible = areControlsVisible(timelineElement);
+    const playerRect = playerElement.getBoundingClientRect();
+    const playInfo = getPlayControlInfo();
+    const controlsVisible = areControlsVisible(timelineElement, playInfo);
     if (!controlsVisible) {
       nextButton.style.display = 'none';
       return;
     }
 
-    const playerRect = playerElement.getBoundingClientRect();
-    const playInfo = getPlayControlInfo();
     if (playInfo) {
       applyButtonStyles(playInfo);
       const actualSize = setButtonSize(Math.max(playInfo.rect.width, playInfo.rect.height));
