@@ -250,9 +250,9 @@
   }
 
   function createZoomButtons() {
-    zoomOutButton = createZoomButton('zoom-out-button', '-', 'Zoom video out', () => adjustVideoZoom(-ZOOM_STEP));
-    zoomResetButton = createZoomButton('zoom-reset-button', 'reset', 'Reset zoom', () => setVideoZoom(1));
-    zoomInButton = createZoomButton('zoom-in-button', '+', 'Zoom video in', () => adjustVideoZoom(ZOOM_STEP));
+    zoomOutButton = createZoomButton('zoom-out-button', '▬', 'Zoom video out', () => adjustVideoZoom(-ZOOM_STEP));
+    zoomResetButton = createZoomButton('zoom-reset-button', 'Z-Reset', 'Reset zoom', () => setVideoZoom(1));
+    zoomInButton = createZoomButton('zoom-in-button', '✚', 'Zoom video in', () => adjustVideoZoom(ZOOM_STEP));
     [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => mountEpisodeButton(button));
     updateZoomButtonsState();
     refreshZoomTooltips();
