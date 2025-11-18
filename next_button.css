@@ -1,7 +1,10 @@
 /* styles.css */
 
 #next-episode-button,
-#prev-episode-button {
+#prev-episode-button,
+#zoom-out-button,
+#zoom-reset-button,
+#zoom-in-button {
     position: absolute;
     top: 0;
     left: 0;
@@ -14,6 +17,7 @@
     font-size: 14px;
     font-weight: 700;
     text-align: center;
+    white-space: nowrap;
     line-height: 24px;
     border-radius: 10px;
     background: rgba(0, 0, 0, 0.65);
@@ -41,12 +45,18 @@
 }
 
 #next-episode-button:hover,
-#prev-episode-button:hover {
+#prev-episode-button:hover,
+#zoom-out-button:hover,
+#zoom-reset-button:hover,
+#zoom-in-button:hover {
     background: rgb(0, 173, 239);
 }
 
 #next-episode-button.is-disabled,
-#prev-episode-button.is-disabled {
+#prev-episode-button.is-disabled,
+#zoom-out-button.is-disabled,
+#zoom-reset-button.is-disabled,
+#zoom-in-button.is-disabled {
     cursor: default;
     pointer-events: none;
     opacity: 0.4;

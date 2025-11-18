@@ -6,6 +6,9 @@
 
   let nextButton;
   let prevButton;
+  let zoomOutButton;
+  let zoomResetButton;
+  let zoomInButton;
   const observedEpisodes = new WeakSet();
   const LAYOUT_INTERVAL_MS = 800;
   const BUTTON_MARGIN_PX = 12;
@@ -17,6 +20,11 @@
     </svg>
   `;
   const PREV_ICON_SVG = NEXT_ICON_SVG;
+  const ZOOM_STEP = 0.04;
+  const MAX_ZOOM = 2;
+  const MIN_ZOOM = -2;
+  const ZOOM_PRECISION = 2;
+  let currentZoomLevel = 1;
   let observedPlayButton = null;
   let playButtonHoverHandlers = null;
 
@@ -193,6 +201,83 @@
     mountEpisodeButton(nextButton);
   }
 
+  function createZoomButton(id, label, tooltip, handler) {
+    const button = document.createElement('pjsdiv');
+    button.id = id;
+    button.textContent = label;
+    button.dataset.isHovered = 'false';
+    button.title = tooltip;
+    button.setAttribute('aria-label', tooltip);
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (button.classList.contains('is-disabled')) return;
+      handler();
+    });
+    return button;
+  }
+
+  function createZoomButtons() {
+    zoomOutButton = createZoomButton('zoom-out-button', '-', 'Zoom video out', () => adjustVideoZoom(-ZOOM_STEP));
+    zoomResetButton = createZoomButton('zoom-reset-button', 'reset', 'Reset zoom', () => setVideoZoom(1));
+    zoomInButton = createZoomButton('zoom-in-button', '+', 'Zoom video in', () => adjustVideoZoom(ZOOM_STEP));
+    [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => mountEpisodeButton(button));
+    updateZoomButtonsState();
+  }
+
+  function getControlledButtons() {
+    return [prevButton, nextButton, zoomOutButton, zoomResetButton, zoomInButton].filter(Boolean);
+  }
+
+  function getVideoElement() {
+    const playerElement = document.getElementById('oframecdnplayer');
+    if (!playerElement) return null;
+    return playerElement.querySelector('video');
+  }
+
+  function clampZoom(value) {
+    if (Number.isNaN(value)) return currentZoomLevel;
+    return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+  }
+
+  function applyZoomToVideoElement() {
+    const video = getVideoElement();
+    if (!video) return;
+    video.style.transformOrigin = 'center center';
+    video.style.transition = video.style.transition || 'transform 0.15s ease-out';
+    video.style.transform = `scale(${ currentZoomLevel })`;
+  }
+
+  function setVideoZoom(nextValue) {
+    const clamped = clampZoom(nextValue);
+    currentZoomLevel = parseFloat(clamped.toFixed(ZOOM_PRECISION));
+    applyZoomToVideoElement();
+    updateZoomButtonsState();
+  }
+
+  function adjustVideoZoom(delta) {
+    setVideoZoom(currentZoomLevel + delta);
+  }
+
+  function updateZoomButtonsState() {
+    const atMin = currentZoomLevel <= MIN_ZOOM + Number.EPSILON;
+    const atMax = currentZoomLevel >= MAX_ZOOM - Number.EPSILON;
+    if (zoomOutButton) {
+      zoomOutButton.classList.toggle('is-disabled', atMin);
+      if (atMin) {
+        zoomOutButton.dataset.isHovered = 'false';
+      }
+    }
+    if (zoomInButton) {
+      zoomInButton.classList.toggle('is-disabled', atMax);
+      if (atMax) {
+        zoomInButton.dataset.isHovered = 'false';
+      }
+    }
+    if (zoomResetButton) {
+      zoomResetButton.classList.remove('is-disabled');
+    }
+  }
+
   function applyButtonStyles(controlInfo, targetButton = nextButton) {
     const button = targetButton || nextButton;
     if (!button) return;
@@ -243,7 +328,7 @@
   function ensureAttached() {
     const playerElement = document.getElementById('oframecdnplayer');
     if (!playerElement) return;
-    [prevButton, nextButton].forEach((button) => {
+    getControlledButtons().forEach((button) => {
       if (button && button.parentElement !== playerElement) {
         playerElement.appendChild(button);
       }
@@ -337,7 +422,7 @@
       requestAnimationFrame(() => {
         const color = extractColor(getComputedStyle(element).backgroundColor);
         if (color) {
-          [prevButton, nextButton].forEach((button) => {
+          getControlledButtons().forEach((button) => {
             if (button) {
               button.dataset.nextButtonHoverColor = color;
               updateButtonBackground(button);
@@ -351,7 +436,7 @@
       requestAnimationFrame(() => {
         const color = extractColor(getComputedStyle(element).backgroundColor);
         if (color) {
-          [prevButton, nextButton].forEach((button) => {
+          getControlledButtons().forEach((button) => {
             if (button) {
               button.dataset.nextButtonBaseColor = color;
               updateButtonBackground(button);
@@ -526,11 +611,12 @@
   function positionEpisodeButtons() {
     if (!nextButton || !prevButton) return;
     ensureAttached();
+    applyZoomToVideoElement();
 
     const playerElement = document.getElementById('oframecdnplayer');
     const timelineElement = document.getElementById('cdnplayer_control_timeline');
     if (!playerElement || !timelineElement) {
-      [prevButton, nextButton].forEach((button) => {
+      getControlledButtons().forEach((button) => {
         if (button) button.style.display = 'none';
       });
       return;
@@ -543,35 +629,56 @@
     }
     const controlsVisible = areControlsVisible(timelineElement, playInfo);
     if (!controlsVisible) {
-      [prevButton, nextButton].forEach((button) => {
+      getControlledButtons().forEach((button) => {
         if (button) button.style.display = 'none';
       });
       return;
     }
 
     if (playInfo) {
-      [prevButton, nextButton].forEach((button) => applyButtonStyles(playInfo, button));
-      const nextSize = setButtonSize(playInfo.rect.width, playInfo.rect.height, nextButton);
-      const prevSize = setButtonSize(playInfo.rect.width, playInfo.rect.height, prevButton);
+      getControlledButtons().forEach((button) => applyButtonStyles(playInfo, button));
+      const sizeMap = new Map();
+      getControlledButtons().forEach((button) => {
+        sizeMap.set(button, setButtonSize(playInfo.rect.width, playInfo.rect.height, button));
+      });
+      const nextSize = sizeMap.get(nextButton);
+      const prevSize = sizeMap.get(prevButton);
       const nextLeft = playInfo.rect.left - playerRect.left - 2;
       const top = playInfo.rect.top - playerRect.top - nextSize.height - BUTTON_MARGIN_PX + 3;
       const prevLeft = nextLeft - prevSize.width - BUTTON_MARGIN_PX;
 
-      nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, nextLeft) + 71 }px`;
-      nextButton.style.top = `${ Math.max(0, top) }px`;
-      prevButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, prevLeft) - 2 }px`;
-      prevButton.style.top = `${ Math.max(0, top) }px`;
-      nextButton.style.display = 'block';
-      prevButton.style.display = 'block';
+      const sharedTop = `${ Math.max(0, top) }px`;
+      const nextDisplayLeft = Math.max(BUTTON_MARGIN_PX, nextLeft) + 71;
+      const prevDisplayLeft = Math.max(BUTTON_MARGIN_PX, prevLeft) - 2;
+
+      nextButton.style.left = `${ nextDisplayLeft }px`;
+      nextButton.style.top = sharedTop;
+      prevButton.style.left = `${ prevDisplayLeft }px`;
+      prevButton.style.top = sharedTop;
+
+      let currentLeft = nextDisplayLeft + nextSize.width + BUTTON_MARGIN_PX;
+      [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => {
+        if (!button) return;
+        const buttonSize = sizeMap.get(button);
+        button.style.left = `${ currentLeft }px`;
+        button.style.top = sharedTop;
+        currentLeft += (buttonSize ? buttonSize.width : nextSize.width) + BUTTON_MARGIN_PX;
+      });
+
+      getControlledButtons().forEach((button) => {
+        if (button) button.style.display = 'block';
+      });
       return;
     }
 
     detachPlayButtonHover();
-    [prevButton, nextButton].forEach((button) => applyButtonStyles(null, button));
+    getControlledButtons().forEach((button) => applyButtonStyles(null, button));
     const fallbackDimension = (nextButton.offsetWidth || parseFloat(nextButton.style.width)) || 32;
-    const { width: fallbackWidth, height: fallbackHeight } =
-      setButtonSize(fallbackDimension, fallbackDimension, nextButton);
-    setButtonSize(fallbackDimension, fallbackDimension, prevButton);
+    const sizeMap = new Map();
+    getControlledButtons().forEach((button) => {
+      sizeMap.set(button, setButtonSize(fallbackDimension, fallbackDimension, button));
+    });
+    const { width: fallbackWidth, height: fallbackHeight } = sizeMap.get(nextButton);
     reserveTimelineSpace();
 
     const { element: anchorElement, placeBefore } = getPreferredAnchor(timelineElement);
@@ -584,18 +691,33 @@
     const top = anchorRect.top - playerRect.top + (anchorRect.height - fallbackHeight) / 2;
 
     const prevLeft = nextLeft - fallbackWidth - BUTTON_MARGIN_PX;
+    const sharedTop = `${ Math.max(0, top) }px`;
+    const nextDisplayLeft = Math.max(BUTTON_MARGIN_PX, nextLeft);
+    const prevDisplayLeft = Math.max(BUTTON_MARGIN_PX, prevLeft);
 
-    nextButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, nextLeft) }px`;
-    nextButton.style.top = `${ Math.max(0, top) }px`;
-    prevButton.style.left = `${ Math.max(BUTTON_MARGIN_PX, prevLeft) }px`;
-    prevButton.style.top = `${ Math.max(0, top) }px`;
-    nextButton.style.display = 'block';
-    prevButton.style.display = 'block';
+    nextButton.style.left = `${ nextDisplayLeft }px`;
+    nextButton.style.top = sharedTop;
+    prevButton.style.left = `${ prevDisplayLeft }px`;
+    prevButton.style.top = sharedTop;
+
+    let currentLeft = nextDisplayLeft + fallbackWidth + BUTTON_MARGIN_PX;
+    [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => {
+      if (!button) return;
+      const buttonSize = sizeMap.get(button);
+      button.style.left = `${ currentLeft }px`;
+      button.style.top = sharedTop;
+      currentLeft += (buttonSize ? buttonSize.width : fallbackWidth) + BUTTON_MARGIN_PX;
+    });
+
+    getControlledButtons().forEach((button) => {
+      if (button) button.style.display = 'block';
+    });
   }
 
   function init() {
     createPrevButton();
     createNextButton();
+    createZoomButtons();
     updateEpisodeButtons();
     positionEpisodeButtons();
     setInterval(positionEpisodeButtons, LAYOUT_INTERVAL_MS);
