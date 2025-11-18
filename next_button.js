@@ -91,6 +91,7 @@
   function updateEpisodeButtons() {
     updateEpisodeButton(prevButton, getPreviousEpisodeElement, getPrevButtonTooltip);
     updateEpisodeButton(nextButton, getNextEpisodeElement, getNextButtonTooltip);
+    updatePlayButtonTooltip();
     attachObserverToActive();
   }
 
@@ -141,6 +142,34 @@
       }
     }
     return prevEpisode && prevEpisode.classList.contains('b-simple_episode__item') ? prevEpisode : null;
+  }
+
+  function getActiveEpisodeInfo() {
+    const activeEpisode = document.querySelector('.b-simple_episode__item.active');
+    if (!activeEpisode) return null;
+    const season = activeEpisode.getAttribute('data-season_id');
+    const episode = activeEpisode.getAttribute('data-episode_id');
+    if (!season || !episode) return null;
+    return { season, episode };
+  }
+
+  function formatEpisodeLabel(info) {
+    if (!info || !info.season || !info.episode) return null;
+    return `S${ info.season }:E${ info.episode }`;
+  }
+
+  function updatePlayButtonTooltip() {
+    const playElement = getPlayButtonElement();
+    if (!playElement) return;
+    const info = getActiveEpisodeInfo();
+    const label = formatEpisodeLabel(info);
+    if (!label) return;
+    if (playElement.title !== label) {
+      playElement.title = label;
+    }
+    if (playElement.getAttribute('aria-label') !== label) {
+      playElement.setAttribute('aria-label', label);
+    }
   }
 
   function navigateToPreviousEpisode() {
@@ -631,6 +660,7 @@
     if (!nextButton || !prevButton) return;
     ensureAttached();
     applyZoomToVideoElement();
+    updatePlayButtonTooltip();
 
     const playerElement = document.getElementById('oframecdnplayer');
     const timelineElement = document.getElementById('cdnplayer_control_timeline');
