@@ -24,9 +24,11 @@
   const MAX_ZOOM = 2;
   const MIN_ZOOM = -2;
   const ZOOM_PRECISION = 2;
+  const ZOOM_COOKIE_PREFIX = 'hdrezka_zoom_';
   let currentZoomLevel = 1;
   let observedPlayButton = null;
   let playButtonHoverHandlers = null;
+  let activeZoomStorageKey = null;
 
   function attachObserverToActive() {
     const activeEpisode = document.querySelector('.b-simple_episode__item.active');
@@ -92,6 +94,7 @@
     updateEpisodeButton(prevButton, getPreviousEpisodeElement, getPrevButtonTooltip);
     updateEpisodeButton(nextButton, getNextEpisodeElement, getNextButtonTooltip);
     updatePlayButtonTooltip();
+    syncZoomWithStorage();
     attachObserverToActive();
   }
 
@@ -294,12 +297,71 @@
     });
   }
 
-  function setVideoZoom(nextValue) {
+  function getShowIdentifier() {
+    const path = window.location && window.location.pathname ? window.location.pathname : '';
+    if (!path) return null;
+    const cleaned = path.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
+    return cleaned || null;
+  }
+
+  function getZoomStorageKey() {
+    const showIdentifier = getShowIdentifier();
+    const episodeInfo = getActiveEpisodeInfo();
+    if (!showIdentifier || !episodeInfo || !episodeInfo.season) {
+      return null;
+    }
+    return `${ ZOOM_COOKIE_PREFIX }${ showIdentifier }_s${ episodeInfo.season }`;
+  }
+
+  function readCookieValue(name) {
+    if (!name || !document.cookie) return null;
+    const cookies = document.cookie.split(';');
+    for (const rawCookie of cookies) {
+      const cookie = rawCookie.trim();
+      if (cookie.startsWith(`${ name }=`)) {
+        return decodeURIComponent(cookie.substring(name.length + 1));
+      }
+    }
+    return null;
+  }
+
+  function writeCookieValue(name, value) {
+    if (!name) return;
+    const encodedValue = encodeURIComponent(String(value));
+    document.cookie = `${ name }=${ encodedValue }; path=/; expires=Fri, 31 Dec 9999 23:59:59 GMT`;
+  }
+
+  function persistCurrentZoom() {
+    const key = getZoomStorageKey() || activeZoomStorageKey;
+    if (!key) return;
+    activeZoomStorageKey = key;
+    writeCookieValue(key, currentZoomLevel);
+  }
+
+  function syncZoomWithStorage() {
+    const key = getZoomStorageKey();
+    if (!key) return;
+    if (activeZoomStorageKey === key) return;
+    activeZoomStorageKey = key;
+    const savedValue = readCookieValue(key);
+    const parsed = savedValue !== null ? parseFloat(savedValue) : NaN;
+    if (Number.isFinite(parsed)) {
+      setVideoZoom(parsed, { persist: false });
+    } else {
+      setVideoZoom(1, { persist: false });
+    }
+  }
+
+  function setVideoZoom(nextValue, options = {}) {
+    const { persist = true } = options;
     const clamped = clampZoom(nextValue);
     currentZoomLevel = parseFloat(clamped.toFixed(ZOOM_PRECISION));
     applyZoomToVideoElement();
     updateZoomButtonsState();
     refreshZoomTooltips();
+    if (persist) {
+      persistCurrentZoom();
+    }
   }
 
   function adjustVideoZoom(delta) {
