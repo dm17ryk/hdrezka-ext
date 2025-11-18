@@ -206,6 +206,7 @@
     button.id = id;
     button.textContent = label;
     button.dataset.isHovered = 'false';
+    button.dataset.tooltipBase = tooltip;
     button.title = tooltip;
     button.setAttribute('aria-label', tooltip);
     button.addEventListener('click', (event) => {
@@ -222,6 +223,7 @@
     zoomInButton = createZoomButton('zoom-in-button', '+', 'Zoom video in', () => adjustVideoZoom(ZOOM_STEP));
     [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => mountEpisodeButton(button));
     updateZoomButtonsState();
+    refreshZoomTooltips();
   }
 
   function getControlledButtons() {
@@ -247,11 +249,28 @@
     video.style.transform = `scale(${ currentZoomLevel })`;
   }
 
+  function formatZoomValue(value) {
+    const normalized = Number.isFinite(value) ? value : 1;
+    return `${ normalized.toFixed(2) }x`;
+  }
+
+  function refreshZoomTooltips() {
+    const zoomLabel = formatZoomValue(currentZoomLevel);
+    [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => {
+      if (!button) return;
+      const base = button.dataset.tooltipBase || '';
+      const fullLabel = base ? `${ base } (${ zoomLabel })` : zoomLabel;
+      button.title = fullLabel;
+      button.setAttribute('aria-label', fullLabel);
+    });
+  }
+
   function setVideoZoom(nextValue) {
     const clamped = clampZoom(nextValue);
     currentZoomLevel = parseFloat(clamped.toFixed(ZOOM_PRECISION));
     applyZoomToVideoElement();
     updateZoomButtonsState();
+    refreshZoomTooltips();
   }
 
   function adjustVideoZoom(delta) {
