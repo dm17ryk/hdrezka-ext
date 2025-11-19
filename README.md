@@ -2,7 +2,7 @@
 
 > Chrome extension that keeps HDRezka binge-friendly with floating episode controls and per-show zoom memory.
 
-![Placeholder – Extension hero image](docs/screenshots/hero-placeholder.png)
+<img width="930" height="1105" alt="next-button-look-new-21" src="https://github.com/user-attachments/assets/aae7ded0-7e2e-4401-aa0a-9ab35e40b994" />
 
 ## Overview
 
@@ -25,11 +25,9 @@ The content script is injected on each of the following origins (including subdo
 
 ## Visual tour
 
-> Replace the placeholder images below with actual screenshots or GIFs that showcase your workflow.
+<img width="926" height="1005" alt="next-button-look-new-22" src="https://github.com/user-attachments/assets/0a6b3002-3988-4177-a3e1-c34d530f12e6" />
 
-![Placeholder – Episode controls](docs/screenshots/next-prev-placeholder.png)
-
-![Placeholder – Zoom controls](docs/screenshots/zoom-controls-placeholder.png)
+<img width="922" height="1107" alt="next-button-look-new-23" src="https://github.com/user-attachments/assets/b53562d3-526a-404f-910f-023b850427a0" />
 
 ## Installation (Chrome/Chromium)
 
