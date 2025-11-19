@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
-    "name": "HDRezka Next Episode Button",
-    "version": "1.1.4",
-    "description": "Adds a next episode popup button in fullscreen mode on hdrezka websites.",
+    "name": "HDRezka Comfort View",
+    "version": "2.1.4",
+    "description": "Adds a previous and next episode button on hdrezka websites, also adds video zoom in/out functionality with state save.",
     "content_scripts": [
         {
             "matches": [
@@ -22,12 +22,10 @@
                 "*://*.hdrezka.ink/*"
             ],
             "js": [
-                "next_button.js",
-                "stop_cast.js"
+                "next_button.js"
             ],
             "css": [
-                "next_button.css",
-                "stop_cast.css"
+                "next_button.css"
             ]
         }
     ],

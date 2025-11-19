@@ -1,23 +1,69 @@
 /* styles.css */
 
-#next-episode-button {
+#next-episode-button,
+#prev-episode-button,
+#zoom-out-button,
+#zoom-reset-button,
+#zoom-in-button {
     position: absolute;
-    bottom: 50px;
-    right: 10px;
+    top: 0;
+    left: 0;
+    width: 48px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     color: #fff;
-    padding: 10px 15px;
-    z-index: 2147483647;
-    display: block;
-    font-size: 16px;
-    border-radius: 2.3px;
-    background: rgb(23, 35, 34);
-    opacity: 0.7;
-    transition: opacity 0.1s linear, background 0.1s linear, transform 0.1s linear;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+    white-space: nowrap;
+    line-height: 24px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.65);
+    border: 0 solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+    opacity: 0.55;
     cursor: pointer;
     pointer-events: auto;
-    transform: scale(1.0);
+    z-index: 2147483647;
+    transition: background 0.1s linear, opacity 0.1s linear, transform 0.1s linear;
 }
 
-#next-episode-button:hover {
-    background-color: rgb(0, 173, 239);
+#zoom-out-button,
+#zoom-in-button {
+    font-size: 25px;
+    font-weight: bold;
+}
+
+#next-episode-button svg,
+#prev-episode-button svg {
+    width: 80%;
+    height: 80%;
+    align-content: center;
+    vertical-align: middle;
+    fill: currentColor;
+    pointer-events: none;
+}
+
+#prev-episode-button svg {
+    transform: scaleX(-1);
+}
+
+#next-episode-button:hover,
+#prev-episode-button:hover,
+#zoom-out-button:hover,
+#zoom-reset-button:hover,
+#zoom-in-button:hover {
+    background: rgb(0, 173, 239);
+}
+
+#next-episode-button.is-disabled,
+#prev-episode-button.is-disabled,
+#zoom-out-button.is-disabled,
+#zoom-reset-button.is-disabled,
+#zoom-in-button.is-disabled {
+    cursor: default;
+    pointer-events: none;
+    opacity: 0.4;
 }

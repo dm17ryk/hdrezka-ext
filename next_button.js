@@ -1,383 +1,840 @@
 // content.js
 
 (function() {
-  console.log('Content script loaded');
+  console.log('Content script reloaded');
+  //debugger;
 
   let nextButton;
+  let prevButton;
+  let zoomOutButton;
+  let zoomResetButton;
+  let zoomInButton;
   const observedEpisodes = new WeakSet();
+  const LAYOUT_INTERVAL_MS = 800;
+  const BUTTON_MARGIN_PX = 12;
+  const TIMELINE_PADDING_PX = 110;
+  const PLAY_SVG_IDENTIFIER = '0.59375 0.48438';
+  const NEXT_ICON_SVG = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M5 5v14l8-7-8-7zm9 0v14h2V5h-2z"></path>
+    </svg>
+  `;
+  const PREV_ICON_SVG = NEXT_ICON_SVG;
+  const ZOOM_STEP = 0.04;
+  const MAX_ZOOM = 2;
+  const MIN_ZOOM = -2;
+  const ZOOM_PRECISION = 2;
+  const ZOOM_COOKIE_PREFIX = 'hdrezka_zoom_';
+  let currentZoomLevel = 1;
+  let observedPlayButton = null;
+  let playButtonHoverHandlers = null;
+  let activeZoomStorageKey = null;
 
-  /**
-  * Attaches a MutationObserver to an episode element to monitor changes in its class attribute.
-  * The observer watches for the removal of the "active" class. When the "active" class is
-  * removed, it disconnects the observer, logs the change, and attempts to find and attach
-  * the observer to a new active episode element if one is found.
-  *
-  * @param {Element} episode - The episode element to which the observer is attached.
-  */
   function attachObserverToActive() {
     const activeEpisode = document.querySelector('.b-simple_episode__item.active');
-    // Check if the observer is already attached to this element.
-    if (observedEpisodes.has(activeEpisode)) {
-      return; // Skip if already observing.
+    if (!activeEpisode || observedEpisodes.has(activeEpisode)) {
+      return;
     }
-    // Mark this element as being observed.
     observedEpisodes.add(activeEpisode);
-
-    // Create a MutationObserver for the active element.
     const observer = new MutationObserver((mutations, obs) => {
       mutations.forEach((mutation) => {
         if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-          // When the "active" class is removed, disconnect the observer.
           if (!activeEpisode.classList.contains('active')) {
-            console.log('Active class removed from element:', activeEpisode);
-            // Remove the element from the WeakSet so we can reattach if needed.
             observedEpisodes.delete(activeEpisode);
             obs.disconnect();
-
-            // Find the new active activeEpisode.
             const newActiveEpisode = document.querySelector('.b-simple_episode__item.active');
             if (newActiveEpisode) {
-              console.log('New active element found:', newActiveEpisode);
-              // Attach the observer to the new active element.
-              // attachObserverToActive(newActiveEpisode);
-              setTimeout(setNextButtonText, 2000);
-            } else {
-              console.warn('No new active element found.');
+              setTimeout(updateEpisodeButtons, 2000);
             }
           }
         }
       });
     });
-
-    // Observe changes to the "class" attribute.
     observer.observe(activeEpisode, {
       attributes: true,
       attributeFilter: ['class']
     });
   }
 
-  /**
-   * Sets the text of the next button based on the next episode.
-   * If there is a next episode, the button text is set to
-   * "Next Episode: S<season_id>:E<episode_id>" otherwise it is set to "No Next Episode".
-   */
-  function setNextButtonText() {
-    const nextEpisode = getNextEpisodeElement();
-    nextButton.innerText = getNextButtonText(nextEpisode);
-    attachObserverToActive();
-  }
-
-  /**
-   * Returns a string representing the next episode in the following format:
-   * "Next Episode: S<season_id>:E<episode_id>" or "No Next Episode" if there is no
-   * next episode.
-   *
-   * @param {Element} nextEpisode - The next episode element.
-   * @return {string} The text for the Next Episode button.
-   */
-  function getNextButtonText(nextEpisode) {
-    season_id = null;
-    episode_id = null;
-
+  function getNextButtonTooltip(nextEpisode) {
+    let season = null;
+    let episode = null;
     if (
       nextEpisode &&
       nextEpisode.hasAttribute('data-season_id') &&
       nextEpisode.hasAttribute('data-episode_id')
     ) {
-      season_id = nextEpisode.getAttribute('data-season_id');
-      episode_id = nextEpisode.getAttribute('data-episode_id');
+      season = nextEpisode.getAttribute('data-season_id');
+      episode = nextEpisode.getAttribute('data-episode_id');
     }
+    if (season && episode) {
+      return `Play next episode S${ season }:E${ episode }`;
+    }
+    return 'No next episode available';
+  }
 
-    if (season_id && episode_id) {
-      return `Next Episode: S${ season_id }:E${ episode_id }`;
-    } else {
-      return 'No Next Episode';
+  function getPrevButtonTooltip(prevEpisode) {
+    let season = null;
+    let episode = null;
+    if (
+      prevEpisode &&
+      prevEpisode.hasAttribute('data-season_id') &&
+      prevEpisode.hasAttribute('data-episode_id')
+    ) {
+      season = prevEpisode.getAttribute('data-season_id');
+      episode = prevEpisode.getAttribute('data-episode_id');
+    }
+    if (season && episode) {
+      return `Play previous episode S${ season }:E${ episode }`;
+    }
+    return 'No previous episode available';
+  }
+
+  function updateEpisodeButtons() {
+    updateEpisodeButton(prevButton, getPreviousEpisodeElement, getPrevButtonTooltip);
+    updateEpisodeButton(nextButton, getNextEpisodeElement, getNextButtonTooltip);
+    updatePlayButtonTooltip();
+    syncZoomWithStorage();
+    attachObserverToActive();
+  }
+
+  function updateEpisodeButton(button, getEpisodeFn, tooltipFn) {
+    if (!button) return;
+    const episode = getEpisodeFn();
+    const tooltip = tooltipFn(episode);
+    button.title = tooltip;
+    button.setAttribute('aria-label', tooltip);
+    const isDisabled = !episode;
+    button.classList.toggle('is-disabled', isDisabled);
+    if (isDisabled) {
+      button.dataset.isHovered = 'false';
+    }
+    updateButtonBackground(button);
+  }
+
+  function getNextEpisodeElement() {
+    const activeEpisode = document.querySelector('.b-simple_episode__item.active');
+    if (!activeEpisode) return null;
+
+    let nextEpisode = activeEpisode.nextElementSibling;
+    if (!nextEpisode) {
+      const currentSeasonList = activeEpisode.parentElement;
+      const nextSeasonList = currentSeasonList && currentSeasonList.nextElementSibling;
+      if (nextSeasonList && nextSeasonList.classList.contains('b-simple_episodes__list')) {
+        nextSeasonList.style.display = 'block';
+        currentSeasonList.style.display = 'none';
+        nextEpisode = nextSeasonList.querySelector('.b-simple_episode__item');
+      }
+    }
+    return nextEpisode && nextEpisode.classList.contains('b-simple_episode__item') ? nextEpisode : null;
+  }
+
+  function getPreviousEpisodeElement() {
+    const activeEpisode = document.querySelector('.b-simple_episode__item.active');
+    if (!activeEpisode) return null;
+
+    let prevEpisode = activeEpisode.previousElementSibling;
+    if (!prevEpisode) {
+      const currentSeasonList = activeEpisode.parentElement;
+      const prevSeasonList = currentSeasonList && currentSeasonList.previousElementSibling;
+      if (prevSeasonList && prevSeasonList.classList.contains('b-simple_episodes__list')) {
+        prevSeasonList.style.display = 'block';
+        currentSeasonList.style.display = 'none';
+        const episodes = prevSeasonList.querySelectorAll('.b-simple_episode__item');
+        prevEpisode = episodes[episodes.length - 1] || null;
+      }
+    }
+    return prevEpisode && prevEpisode.classList.contains('b-simple_episode__item') ? prevEpisode : null;
+  }
+
+  function getActiveEpisodeInfo() {
+    const activeEpisode = document.querySelector('.b-simple_episode__item.active');
+    if (!activeEpisode) return null;
+    const season = activeEpisode.getAttribute('data-season_id');
+    const episode = activeEpisode.getAttribute('data-episode_id');
+    if (!season || !episode) return null;
+    return { season, episode };
+  }
+
+  function formatEpisodeLabel(info) {
+    if (!info || !info.season || !info.episode) return null;
+    return `S${ info.season }:E${ info.episode }`;
+  }
+
+  function updatePlayButtonTooltip() {
+    const playElement = getPlayButtonElement();
+    if (!playElement) return;
+    const info = getActiveEpisodeInfo();
+    const label = formatEpisodeLabel(info);
+    if (!label) return;
+    if (playElement.title !== label) {
+      playElement.title = label;
+    }
+    if (playElement.getAttribute('aria-label') !== label) {
+      playElement.setAttribute('aria-label', label);
     }
   }
 
-  /**
-   * Creates the Next Episode button and appends it to the player element.
-   * The button is created with the text from the next episode, and a
-   * click event is added to navigate to the next episode.
-   * The style of the button is set to match the control timeline's
-   * background color, and a hover effect is applied to change the
-   * background color to rgb(0, 173, 239) when the mouse is over the button.
-   * If the control timeline element is not found, the function will
-   * retry every 500ms until it is found.
-   */
-  function createNextButton() {
-    console.log('Creating Next Episode button...');
+  function navigateToPreviousEpisode() {
+    const prevEpisode = getPreviousEpisodeElement();
+    if (prevEpisode) {
+      prevEpisode.click();
+      setTimeout(updateEpisodeButtons, 2000);
+      setTimeout(startEpisodePlayback, 2000);
+    }
+  }
 
-    nextButton = document.createElement('pjsdiv');
-    nextButton.id = 'next-episode-button';
-    setNextButtonText();
-    nextButton.addEventListener('click', navigateToNextEpisode);
+  function navigateToNextEpisode() {
+    const nextEpisode = getNextEpisodeElement();
+    if (nextEpisode) {
+      nextEpisode.click();
+      setTimeout(updateEpisodeButtons, 2000);
+      setTimeout(startEpisodePlayback, 2000);
+    }
+  }
 
+  function startEpisodePlayback() {
+    const player = document.getElementById('oframecdnplayer');
+    if (!player) return;
+    const descendants = player.childNodes;
+    const startButton = descendants[7] && descendants[7].firstChild && descendants[7].firstChild.firstChild;
+    if (startButton) {
+      startButton.click();
+    }
+  }
+
+  function createEpisodeButton(id, iconSvg, handler) {
+    const button = document.createElement('pjsdiv');
+    button.id = id;
+    button.innerHTML = iconSvg;
+    button.dataset.isHovered = 'false';
+    button.setAttribute('aria-label', '');
+    button.addEventListener('click', handler);
+    return button;
+  }
+
+  function mountEpisodeButton(button) {
     const playerElement = document.getElementById('oframecdnplayer');
     if (playerElement) {
-      playerElement.appendChild(nextButton);
+      playerElement.appendChild(button);
     } else {
-      console.error('Player element not found.');
+      document.body.appendChild(button);
     }
-
-    /**
-    * Applies the styles to the Next Episode button to match the control timeline's
-    * background color and adds a hover effect to change the background color to
-    * rgb(0, 173, 239) when the mouse is over the button. If the control timeline element
-    * is not found, the function will retry every 500ms until it is found.
-    */
-    function applyStyles() {
-      const controlTimelineElement = document.getElementById('cdnplayer_control_timeline');
-      if (controlTimelineElement) {
-        // Get all descendant pjsdiv elements
-        const descendants = controlTimelineElement.getElementsByTagName('pjsdiv');
-        // Get the background color from the first child pjsdiv
-        // const firstChild = controlTimelineElement.querySelector('pjsdiv[style*="background-color"]');
-        const firstChild = descendants[0]
-        let backgroundColor = 'rgb(23, 35, 34)'; // Default value
-        if (firstChild) {
-          const firstChildStyles = getComputedStyle(firstChild);
-          backgroundColor = firstChildStyles.backgroundColor || backgroundColor;
-        } else {
-          console.warn('First child with background-color not found. Using default color.');
-        }
-        nextButton.style.backgroundColor = backgroundColor;
-        nextButton.style.color = '#fff'; // Ensure text is visible
-
-        // Get the hover background color from the pjsdiv with background rgb(0, 173, 239)
-        // const hoverElement = controlTimelineElement.querySelector('pjsdiv[style*="background: rgb(0, 173, 239)"]');
-        const hoverElement = descendants[4]
-        if (hoverElement) {
-          const hoverStyles = getComputedStyle(hoverElement);
-          const hoverBackgroundColor = hoverStyles.backgroundColor || 'rgb(0, 173, 239)';
-
-          // Set up hover events
-          nextButton.addEventListener('mouseenter', function() {
-            nextButton.style.backgroundColor = hoverBackgroundColor;
-          });
-          nextButton.addEventListener('mouseleave', function() {
-            nextButton.style.backgroundColor = backgroundColor;
-          });
-        } else {
-          console.warn('Hover element with background rgb(0, 173, 239) not found. Hover effect will not be applied.');
-        }
-
-        // Clear the interval once styles are applied
-        clearInterval(styleInterval);
-      } else {
-        console.warn('Control timeline element not found yet. Retrying...');
-      }
-    }
-
-    // Attempt to apply styles every 500ms until successful
-    const styleInterval = setInterval(applyStyles, 500);
-
-    // Start monitoring the control timeline visibility
-    monitorControlTimelineVisibility();
+    applyButtonStyles(undefined, button);
   }
 
-/**
- * Simulates a click on the start button to start the next episode.
- * Retrieves the element using the following DOM traversal:
- * 1. Get the oframecdnplayer element
- * 2. Get the 8th child node (index 7)
- * 3. Get the first child of the 8th node
- * 4. Get the first child of the first child (the start button)
- * 5. Simulate a click on the start button
- */
-function startNextEpisode() {
-  const oframecdnplayer = document.getElementById('oframecdnplayer');
-  const descendants = oframecdnplayer.childNodes;
-  const startButton = descendants[7].firstChild.firstChild;
-  console.log('Start Next Episode...');
-  startButton.click();
-}
+  function createPrevButton() {
+    prevButton = createEpisodeButton('prev-episode-button', PREV_ICON_SVG, navigateToPreviousEpisode);
+    mountEpisodeButton(prevButton);
+  }
 
+  function createNextButton() {
+    nextButton = createEpisodeButton('next-episode-button', NEXT_ICON_SVG, navigateToNextEpisode);
+    mountEpisodeButton(nextButton);
+  }
 
-  /**
-  * Returns the next episode element after the currently active episode.
-  * If there is no next episode in the same season, it will check if there is a next season
-  * and make it visible. If there is a next season, it will return the first episode of that season.
-  * If there is no next episode or no next season, it will return null.
-  *
-  * @return {Element} The next episode element or null.
-  */
-  function getNextEpisodeElement(){
-    console.log('Get next episode element...');
+  function createZoomButton(id, label, tooltip, handler) {
+    const button = document.createElement('pjsdiv');
+    button.id = id;
+    button.textContent = label;
+    button.dataset.isHovered = 'false';
+    button.dataset.tooltipBase = tooltip;
+    button.title = tooltip;
+    button.setAttribute('aria-label', tooltip);
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (button.classList.contains('is-disabled')) return;
+      handler();
+    });
+    return button;
+  }
 
-    // Find the currently active episode
-    const activeEpisode = document.querySelector('.b-simple_episode__item.active');
+  function createZoomButtons() {
+    zoomOutButton = createZoomButton('zoom-out-button', '▬', 'Zoom video out', () => adjustVideoZoom(-ZOOM_STEP));
+    zoomResetButton = createZoomButton('zoom-reset-button', 'Z-Reset', 'Reset zoom', () => setVideoZoom(1));
+    zoomInButton = createZoomButton('zoom-in-button', '✚', 'Zoom video in', () => adjustVideoZoom(ZOOM_STEP));
+    [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => mountEpisodeButton(button));
+    updateZoomButtonsState();
+    refreshZoomTooltips();
+  }
 
-    if (activeEpisode) {
-      let nextEpisode = activeEpisode.nextElementSibling;
+  function getControlledButtons() {
+    return [prevButton, nextButton, zoomOutButton, zoomResetButton, zoomInButton].filter(Boolean);
+  }
 
-      if (!nextEpisode) {
-        // No next sibling, check if there is a next season
-        const currentSeasonList = activeEpisode.parentElement;
-        const nextSeasonList = currentSeasonList.nextElementSibling;
+  function getVideoElement() {
+    const playerElement = document.getElementById('oframecdnplayer');
+    if (!playerElement) return null;
+    return playerElement.querySelector('video');
+  }
 
-        if (nextSeasonList && nextSeasonList.classList.contains('b-simple_episodes__list')) {
-          // Make the next season's episode list visible
-          nextSeasonList.style.display = 'block';
-          // Hide the current season's episode list
-          currentSeasonList.style.display = 'none';
+  function clampZoom(value) {
+    if (Number.isNaN(value)) return currentZoomLevel;
+    return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+  }
 
-          // Get the first episode of the next season
-          nextEpisode = nextSeasonList.querySelector('.b-simple_episode__item');
-        }
+  function applyZoomToVideoElement() {
+    const video = getVideoElement();
+    if (!video) return;
+    video.style.transformOrigin = 'center center';
+    video.style.transition = video.style.transition || 'transform 0.15s ease-out';
+    video.style.transform = `scale(${ currentZoomLevel })`;
+  }
+
+  function formatZoomValue(value) {
+    const normalized = Number.isFinite(value) ? value : 1;
+    return `${ normalized.toFixed(2) }x`;
+  }
+
+  function refreshZoomTooltips() {
+    const zoomLabel = formatZoomValue(currentZoomLevel);
+    [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => {
+      if (!button) return;
+      const base = button.dataset.tooltipBase || '';
+      const fullLabel = base ? `${ base } (${ zoomLabel })` : zoomLabel;
+      button.title = fullLabel;
+      button.setAttribute('aria-label', fullLabel);
+    });
+  }
+
+  function getShowIdentifier() {
+    const path = window.location && window.location.pathname ? window.location.pathname : '';
+    if (!path) return null;
+    const cleaned = path.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
+    return cleaned || null;
+  }
+
+  function getZoomStorageKey() {
+    const showIdentifier = getShowIdentifier();
+    const episodeInfo = getActiveEpisodeInfo();
+    if (!showIdentifier || !episodeInfo || !episodeInfo.season) {
+      return null;
+    }
+    return `${ ZOOM_COOKIE_PREFIX }${ showIdentifier }_s${ episodeInfo.season }`;
+  }
+
+  function readCookieValue(name) {
+    if (!name || !document.cookie) return null;
+    const cookies = document.cookie.split(';');
+    for (const rawCookie of cookies) {
+      const cookie = rawCookie.trim();
+      if (cookie.startsWith(`${ name }=`)) {
+        return decodeURIComponent(cookie.substring(name.length + 1));
       }
-
-      if (nextEpisode && nextEpisode.classList.contains('b-simple_episode__item')) {
-        // Simulate a click on the next episode
-        console.log('Next episode element found.');
-        return nextEpisode;
-      } else {
-        console.log('This is the last episode.');
-      }
-    } else {
-      console.log('Active episode not found.');
     }
     return null;
   }
 
-  /**
-   * Navigates to the next episode by simulating a click on the next episode element.
-   * If there is no next episode, the function does nothing.
-   * @function navigateToNextEpisode
-   */
-  function navigateToNextEpisode() {
-    console.log('Navigating to the next episode...');
+  function writeCookieValue(name, value) {
+    if (!name) return;
+    const encodedValue = encodeURIComponent(String(value));
+    document.cookie = `${ name }=${ encodedValue }; path=/; expires=Fri, 31 Dec 9999 23:59:59 GMT`;
+  }
 
-    const nextEpisode = getNextEpisodeElement();
+  function persistCurrentZoom() {
+    const key = getZoomStorageKey() || activeZoomStorageKey;
+    if (!key) return;
+    activeZoomStorageKey = key;
+    writeCookieValue(key, currentZoomLevel);
+  }
 
-    if (nextEpisode && nextEpisode.classList.contains('b-simple_episode__item')) {
-      // Simulate a click on the next episode
-      nextEpisode.click();
-      setTimeout(setNextButtonText, 2000);
-      setTimeout(startNextEpisode, 2000);
-      console.log('Next episode clicked.');
+  function syncZoomWithStorage() {
+    const key = getZoomStorageKey();
+    if (!key) return;
+    if (activeZoomStorageKey === key) return;
+    activeZoomStorageKey = key;
+    const savedValue = readCookieValue(key);
+    const parsed = savedValue !== null ? parseFloat(savedValue) : NaN;
+    if (Number.isFinite(parsed)) {
+      setVideoZoom(parsed, { persist: false });
     } else {
-      console.log('This is the last episode.');
+      setVideoZoom(1, { persist: false });
     }
   }
 
-  /**
-  * Monitors the control timeline element for changes to its visibility style
-  * and updates the Next Episode button's display style accordingly.
-  * If the control timeline is visible, the Next Episode button will be displayed
-  * in fullscreen mode. If the control timeline is hidden, the Next Episode button
-  * will be hidden.
-  * A MutationObserver is created to monitor changes to the control timeline element's
-  * style attribute, and the Next Episode button's display style is updated accordingly.
-  */
-  function monitorControlTimelineVisibility() {
-    // Get the control timeline element
-    const controlTimelineElement = document.getElementById('cdnplayer_control_timeline');
-    const cdnplayerSettings = document.getElementById('cdnplayer_settings');
+  function setVideoZoom(nextValue, options = {}) {
+    const { persist = true } = options;
+    const clamped = clampZoom(nextValue);
+    currentZoomLevel = parseFloat(clamped.toFixed(ZOOM_PRECISION));
+    applyZoomToVideoElement();
+    updateZoomButtonsState();
+    refreshZoomTooltips();
+    if (persist) {
+      persistCurrentZoom();
+    }
+  }
 
-    if (!controlTimelineElement || !cdnplayerSettings) {
-      console.error('Control timeline element or cdnplayer_settings element not found.');
-      return;
+  function adjustVideoZoom(delta) {
+    setVideoZoom(currentZoomLevel + delta);
+  }
+
+  function updateZoomButtonsState() {
+    const atMin = currentZoomLevel <= MIN_ZOOM + Number.EPSILON;
+    const atMax = currentZoomLevel >= MAX_ZOOM - Number.EPSILON;
+    if (zoomOutButton) {
+      zoomOutButton.classList.toggle('is-disabled', atMin);
+      if (atMin) {
+        zoomOutButton.dataset.isHovered = 'false';
+      }
+    }
+    if (zoomInButton) {
+      zoomInButton.classList.toggle('is-disabled', atMax);
+      if (atMax) {
+        zoomInButton.dataset.isHovered = 'false';
+      }
+    }
+    if (zoomResetButton) {
+      zoomResetButton.classList.remove('is-disabled');
+    }
+  }
+
+  function applyButtonStyles(controlInfo, targetButton = nextButton) {
+    const button = targetButton || nextButton;
+    if (!button) return;
+    const info = controlInfo === undefined ? getPlayControlInfo() : controlInfo;
+    const timelineColors = getTimelineColors();
+    const baseColor = timelineColors.base;
+    const hoverColor = timelineColors.hover;
+
+    if (info && info.styles) {
+      const styles = info.styles;
+      if (styles.borderRadius && styles.borderRadius !== '0px') {
+        const adjustedRadius = adjustBorderRadius(styles.borderRadius, 2);
+        if (adjustedRadius) {
+          button.style.borderRadius = adjustedRadius;
+        }
+      }
+      if (styles.border && styles.border !== '0px none rgb(0, 0, 0)') {
+        button.style.border = styles.border;
+      }
+      if (styles.boxShadow && styles.boxShadow !== 'none') {
+        button.style.boxShadow = styles.boxShadow;
+      }
+      button.style.color = info.iconColor || '#fff';
+    } else {
+      button.style.borderRadius = '12px';
+      button.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+      button.style.boxShadow = '0 0 0 1px rgba(0, 0, 0, 0.4)';
+      button.style.color = '#fff';
     }
 
-    const cdnplayerSettingsParent = cdnplayerSettings.parentElement;
+    setButtonColors(button, baseColor, hoverColor);
+  }
 
-    /**
-     * Updates the Next Episode button's display style based on the control timeline
-     * element's visibility style. If the control timeline is visible and the
-     * document is in fullscreen mode, the Next Episode button will be displayed.
-     * Otherwise, the button will be hidden.
-     * @param {Element} controlTimelineElement The control timeline element
-     * @param {Element} cdnplayerSettingsParent The control cdnplayer settings element
-     * @param {Element} nextButton The Next Episode button element
-     */
-    function updateNextButtonVisibility()
-    {
-      const isFullscreen = !!(
-        document.fullscreenElement ||
-        document.webkitFullscreenElement ||
-        document.mozFullScreenElement ||
-        document.msFullscreenElement
-      );
-      const cdnplayerSettingsStyle = getComputedStyle(cdnplayerSettingsParent);
-      const cdnplayerSettingsVisability = cdnplayerSettingsStyle.visibility;
-      const computedStyle = getComputedStyle(controlTimelineElement);
-      const visibility = computedStyle.visibility;
-      console.log('Cdnplayer settings visibility style:', cdnplayerSettingsVisability);
-      console.log('Control timeline visibility style:', visibility);
-      if (
-        visibility === "visible" &&
-        cdnplayerSettingsVisability === "hidden" &&
-        isFullscreen
-      ) {
-        nextButton.style.display = 'block';
-      } else {
-        // Default case if visibility is not set
-        nextButton.style.display = 'none';
+  function getGearContainer() {
+    const settingsPanel = document.getElementById('cdnplayer_settings');
+    if (!settingsPanel) return null;
+    const gearElement = settingsPanel.parentElement ? settingsPanel.parentElement.previousElementSibling : null;
+    return gearElement ? getPlayerChildFromNode(gearElement) : null;
+  }
+
+  function reserveTimelineSpace() {
+    const timeline = document.getElementById('cdnplayer_control_timeline');
+    if (timeline) {
+      timeline.style.setProperty('padding-right', `${ TIMELINE_PADDING_PX }px`, 'important');
+    }
+  }
+
+  function ensureAttached() {
+    const playerElement = document.getElementById('oframecdnplayer');
+    if (!playerElement) return;
+    getControlledButtons().forEach((button) => {
+      if (button && button.parentElement !== playerElement) {
+        playerElement.appendChild(button);
+      }
+    });
+  }
+
+  function getPlayerChildFromNode(node) {
+    const playerElement = document.getElementById('oframecdnplayer');
+    if (!playerElement || !node) return null;
+    let current = node;
+    while (current && current !== playerElement) {
+      if (current.parentElement === playerElement) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+    return null;
+  }
+
+  function getVolumeContainer() {
+    const volumePath =
+      document.getElementById('pjs_cdnplayercontrol_mutevolume_element1') ||
+      document.getElementById('pjs_cdnplayercontrol_mutevolume_element2');
+    return volumePath ? getPlayerChildFromNode(volumePath) : null;
+  }
+
+  function getPlayButtonElement() {
+    const playerElement = document.getElementById('oframecdnplayer');
+    if (!playerElement) return null;
+    const playSvg = Array.from(playerElement.querySelectorAll('svg')).find((svg) =>
+      svg.innerHTML.includes(PLAY_SVG_IDENTIFIER)
+    );
+    if (!playSvg) return null;
+    const playWrapper = playSvg.closest('pjsdiv');
+    if (!playWrapper) return null;
+
+    const candidates = new Set();
+    const collect = (node) => {
+      if (node) {
+        candidates.add(node);
+        node.querySelectorAll && node.querySelectorAll('pjsdiv').forEach((child) => candidates.add(child));
+      }
+    };
+    collect(playWrapper);
+    collect(playWrapper.parentElement);
+    collect(playWrapper.previousElementSibling);
+    collect(playWrapper.parentElement ? playWrapper.parentElement.previousElementSibling : null);
+
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const rect = candidate.getBoundingClientRect();
+      const styles = getComputedStyle(candidate);
+      if (rect.width >= 20 && rect.height >= 20 && styles.pointerEvents !== 'none') {
+        return candidate;
       }
     }
 
-    // Create a MutationObserver to monitor changes
-    const observer1 = new MutationObserver(function(mutations) {
-      mutations.forEach(function(mutation) {
-        if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
-          updateNextButtonVisibility();
-        }
-      });
-    });
-
-    const observer2 = new MutationObserver(function(mutations) {
-      mutations.forEach(function(mutation) {
-        if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
-          updateNextButtonVisibility();
-        }
-      });
-    });
-
-    // Start observing the control timeline element
-    observer1.observe(controlTimelineElement, {
-      attributes: true, // Watch for attribute changes
-      attributeFilter: ['style', 'class'] // Only watch the 'style' attribute
-    });
-
-    observer2.observe(cdnplayerSettingsParent, {
-      attributes: true, // Watch for attribute changes
-      attributeFilter: ['style', 'class'] // Only watch the 'style' attribute
-    });
-
-    // Initial check
-    updateNextButtonVisibility();
+    return playWrapper;
   }
 
-  /**
-  * Checks the current fullscreen status of the document and updates the Next
-  * Episode button visibility accordingly. If the document is in fullscreen mode,
-  * the Next Episode button will be displayed. Otherwise, the button will be hidden.
-  * @function checkFullscreen
-  */
-  function checkFullscreen() {
-    console.log('Checking fullscreen status...');
-    const isFullscreen = !!(
-      document.fullscreenElement ||
-      document.webkitFullscreenElement ||
-      document.mozFullScreenElement ||
-      document.msFullscreenElement
+  function getPlayButtonRect() {
+    const element = getPlayButtonElement();
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? rect : null;
+  }
+
+  function getPlayControlInfo() {
+    const playerElement = document.getElementById('oframecdnplayer');
+    if (!playerElement) return null;
+    const playSvg = Array.from(playerElement.querySelectorAll('svg')).find((svg) =>
+      svg.innerHTML.includes(PLAY_SVG_IDENTIFIER)
     );
-    console.log('Is fullscreen:', isFullscreen);
-    if (isFullscreen) {
-      if (!nextButton) createNextButton();
-      // The visibility is now managed by the control timeline visibility
-      setNextButtonText();
-    } else {
-      if (nextButton) nextButton.style.display = 'none';
+    if (!playSvg) return null;
+    const playElement = getPlayButtonElement();
+    if (!playElement) return null;
+    const rect = playElement.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const styles = getComputedStyle(playElement);
+    const shape = playSvg.querySelector('polyline, polygon, path');
+    const iconColor = shape ? (shape.getAttribute('fill') || getComputedStyle(shape).fill) : null;
+    return { element: playElement, rect, styles, iconColor };
+  }
+
+  function attachPlayButtonHover(element) {
+    if (!element) return;
+    if (observedPlayButton === element) return;
+    detachPlayButtonHover();
+
+    const onEnter = () => {
+      requestAnimationFrame(() => {
+        const color = extractColor(getComputedStyle(element).backgroundColor);
+        if (color) {
+          getControlledButtons().forEach((button) => {
+            if (button) {
+              button.dataset.nextButtonHoverColor = color;
+              updateButtonBackground(button);
+            }
+          });
+        }
+      });
+    };
+
+    const onLeave = () => {
+      requestAnimationFrame(() => {
+        const color = extractColor(getComputedStyle(element).backgroundColor);
+        if (color) {
+          getControlledButtons().forEach((button) => {
+            if (button) {
+              button.dataset.nextButtonBaseColor = color;
+              updateButtonBackground(button);
+            }
+          });
+        }
+      });
+    };
+
+    element.addEventListener('mouseenter', onEnter);
+    element.addEventListener('mouseleave', onLeave);
+    playButtonHoverHandlers = { onEnter, onLeave };
+    observedPlayButton = element;
+    onLeave();
+  }
+
+  function detachPlayButtonHover() {
+    if (observedPlayButton && playButtonHoverHandlers) {
+      observedPlayButton.removeEventListener('mouseenter', playButtonHoverHandlers.onEnter);
+      observedPlayButton.removeEventListener('mouseleave', playButtonHoverHandlers.onLeave);
+    }
+    observedPlayButton = null;
+    playButtonHoverHandlers = null;
+  }
+
+  function extractColor(rawColor) {
+    if (!rawColor || rawColor === 'rgba(0, 0, 0, 0)') {
+      return null;
+    }
+    return rawColor;
+  }
+
+  function getTimelineColors() {
+    const timeline = document.getElementById('cdnplayer_control_timeline');
+    let base = 'rgb(23, 35, 34)';
+    let hover = 'rgb(0, 173, 239)';
+    if (timeline) {
+      const descendants = timeline.getElementsByTagName('pjsdiv');
+      const firstChild = descendants[0];
+      if (firstChild) {
+        base = getComputedStyle(firstChild).backgroundColor || base;
+      }
+      const hoverElement = descendants[4];
+      if (hoverElement) {
+        hover = getComputedStyle(hoverElement).backgroundColor || hover;
+      }
+    }
+    return { base, hover };
+  }
+
+  function areControlsVisible(timelineElement, playInfo) {
+    if (!timelineElement || !playInfo) return false;
+    const playerElement = document.getElementById('oframecdnplayer');
+    if (!playerElement) return false;
+    const timelineStyles = getComputedStyle(timelineElement);
+    const playStyles = getComputedStyle(playInfo.element);
+    const playParentStyles = playInfo.element.parentElement ? getComputedStyle(playInfo.element.parentElement) : null;
+
+    if (
+      playStyles.display === 'none' ||
+      playStyles.visibility === 'hidden' ||
+      parseFloat(playStyles.opacity || '1') === 0 ||
+      (playParentStyles && parseFloat(playParentStyles.opacity || '1') === 0)
+    ) {
+      return false;
+    }
+
+    const styles = timelineStyles;
+    if (styles.display === 'none') return false;
+    const opacity = parseFloat(styles.opacity || '1');
+    return opacity > 0.05;
+  }
+
+  function setButtonSize(width, height, targetButton = nextButton) {
+    const button = targetButton || nextButton;
+    if (!button) return { width: 0, height: 0 };
+    const clampedWidth = Math.max(24, Math.min(120, Math.round(width || 32)));
+    const clampedHeight = Math.max(24, Math.min(120, Math.round(height || clampedWidth)));
+    button.style.width = `${ clampedWidth }px`;
+    button.style.height = `${ clampedHeight }px`;
+    button.style.lineHeight = `${ clampedHeight }px`;
+    return { width: clampedWidth, height: clampedHeight };
+  }
+
+  function adjustBorderRadius(radius, deltaPx) {
+    if (!radius || radius === '0px') return null;
+    const adjustSegment = (segment) =>
+      segment
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((value) => {
+          const numeric = parseFloat(value);
+          if (Number.isNaN(numeric)) {
+            return value;
+          }
+          return `${ Math.max(0, numeric + deltaPx) }px`;
+        })
+        .join(' ');
+
+    if (radius.includes('/')) {
+      const [first, second] = radius.split('/');
+      return `${ adjustSegment(first) } / ${ adjustSegment(second || first) }`;
+    }
+    return adjustSegment(radius);
+  }
+
+  function setButtonColors(targetButton, baseColor, hoverColor) {
+    const button = targetButton || nextButton;
+    if (!button) return;
+    const normal = baseColor || 'rgb(23, 35, 34)';
+    const hover = hoverColor || 'rgba(29, 174, 236, 0.7)';
+    button.dataset.nextButtonBaseColor = normal;
+    button.dataset.nextButtonHoverColor = hover;
+    updateButtonBackground(button);
+    ensureHoverHandlers(button);
+  }
+
+  function ensureHoverHandlers(targetButton = nextButton) {
+    const button = targetButton || nextButton;
+    if (!button || button.dataset.hoverHandlerAttached === 'true') {
+      return;
+    }
+    button.addEventListener('mouseenter', () => {
+      if (button.classList.contains('is-disabled')) return;
+      button.dataset.isHovered = 'true';
+      updateButtonBackground(button);
+    });
+    button.addEventListener('mouseleave', () => {
+      button.dataset.isHovered = 'false';
+      updateButtonBackground(button);
+    });
+    button.dataset.hoverHandlerAttached = 'true';
+  }
+
+  function updateButtonBackground(targetButton = nextButton) {
+    const button = targetButton || nextButton;
+    if (!button) return;
+    const hovered = button.dataset.isHovered === 'true';
+    const baseColor = button.dataset.nextButtonBaseColor;
+    const hoverColor = button.dataset.nextButtonHoverColor;
+    const targetColor = hovered ? (hoverColor || baseColor) : baseColor;
+    if (targetColor) {
+      button.style.backgroundColor = targetColor;
     }
   }
 
-  // Listen for fullscreen change events
-  ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(event => {
-    document.addEventListener(event, checkFullscreen);
-  });
+  function getPreferredAnchor(timelineElement) {
+    const volumeContainer = getVolumeContainer();
+    if (volumeContainer && isElementVisible(volumeContainer)) {
+      return { element: volumeContainer, placeBefore: true };
+    }
 
-  // Initial check
-  checkFullscreen();
+    const gearContainer = getGearContainer();
+    if (gearContainer && isElementVisible(gearContainer)) {
+      return { element: gearContainer, placeBefore: true };
+    }
+
+    return { element: timelineElement, placeBefore: false };
+  }
+
+  function isElementVisible(element) {
+    if (!element) return false;
+    const styles = getComputedStyle(element);
+    if (styles.display === 'none' || styles.visibility === 'hidden' || parseFloat(styles.opacity || '1') === 0) {
+      return false;
+    }
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
+  function positionEpisodeButtons() {
+    if (!nextButton || !prevButton) return;
+    ensureAttached();
+    applyZoomToVideoElement();
+    updatePlayButtonTooltip();
+
+    const playerElement = document.getElementById('oframecdnplayer');
+    const timelineElement = document.getElementById('cdnplayer_control_timeline');
+    if (!playerElement || !timelineElement) {
+      getControlledButtons().forEach((button) => {
+        if (button) button.style.display = 'none';
+      });
+      return;
+    }
+
+    const playerRect = playerElement.getBoundingClientRect();
+    const playInfo = getPlayControlInfo();
+    if (playInfo) {
+      attachPlayButtonHover(playInfo.element);
+    }
+    const controlsVisible = areControlsVisible(timelineElement, playInfo);
+    if (!controlsVisible) {
+      getControlledButtons().forEach((button) => {
+        if (button) button.style.display = 'none';
+      });
+      return;
+    }
+
+    if (playInfo) {
+      getControlledButtons().forEach((button) => applyButtonStyles(playInfo, button));
+      const sizeMap = new Map();
+      getControlledButtons().forEach((button) => {
+        sizeMap.set(button, setButtonSize(playInfo.rect.width, playInfo.rect.height, button));
+      });
+      const nextSize = sizeMap.get(nextButton);
+      const prevSize = sizeMap.get(prevButton);
+      const nextLeft = playInfo.rect.left - playerRect.left - 2;
+      const top = playInfo.rect.top - playerRect.top - nextSize.height - BUTTON_MARGIN_PX + 3;
+      const prevLeft = nextLeft - prevSize.width - BUTTON_MARGIN_PX;
+
+      const sharedTop = `${ Math.max(0, top) }px`;
+      const nextDisplayLeft = Math.max(BUTTON_MARGIN_PX, nextLeft) + 71;
+      const prevDisplayLeft = Math.max(BUTTON_MARGIN_PX, prevLeft) - 2;
+
+      nextButton.style.left = `${ nextDisplayLeft }px`;
+      nextButton.style.top = sharedTop;
+      prevButton.style.left = `${ prevDisplayLeft }px`;
+      prevButton.style.top = sharedTop;
+
+      let currentLeft = nextDisplayLeft + nextSize.width + BUTTON_MARGIN_PX;
+      [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => {
+        if (!button) return;
+        const buttonSize = sizeMap.get(button);
+        button.style.left = `${ currentLeft }px`;
+        button.style.top = sharedTop;
+        currentLeft += (buttonSize ? buttonSize.width : nextSize.width) + BUTTON_MARGIN_PX;
+      });
+
+      getControlledButtons().forEach((button) => {
+        if (button) button.style.display = 'block';
+      });
+      return;
+    }
+
+    detachPlayButtonHover();
+    getControlledButtons().forEach((button) => applyButtonStyles(null, button));
+    const fallbackDimension = (nextButton.offsetWidth || parseFloat(nextButton.style.width)) || 32;
+    const sizeMap = new Map();
+    getControlledButtons().forEach((button) => {
+      sizeMap.set(button, setButtonSize(fallbackDimension, fallbackDimension, button));
+    });
+    const { width: fallbackWidth, height: fallbackHeight } = sizeMap.get(nextButton);
+    reserveTimelineSpace();
+
+    const { element: anchorElement, placeBefore } = getPreferredAnchor(timelineElement);
+    const anchorNode = anchorElement || timelineElement;
+    const anchorRect = anchorNode.getBoundingClientRect();
+
+    const nextLeft = placeBefore
+      ? anchorRect.left - playerRect.left - fallbackWidth - BUTTON_MARGIN_PX
+      : anchorRect.right - playerRect.left + BUTTON_MARGIN_PX;
+    const top = anchorRect.top - playerRect.top + (anchorRect.height - fallbackHeight) / 2;
+
+    const prevLeft = nextLeft - fallbackWidth - BUTTON_MARGIN_PX;
+    const sharedTop = `${ Math.max(0, top) }px`;
+    const nextDisplayLeft = Math.max(BUTTON_MARGIN_PX, nextLeft);
+    const prevDisplayLeft = Math.max(BUTTON_MARGIN_PX, prevLeft);
+
+    nextButton.style.left = `${ nextDisplayLeft }px`;
+    nextButton.style.top = sharedTop;
+    prevButton.style.left = `${ prevDisplayLeft }px`;
+    prevButton.style.top = sharedTop;
+
+    let currentLeft = nextDisplayLeft + fallbackWidth + BUTTON_MARGIN_PX;
+    [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => {
+      if (!button) return;
+      const buttonSize = sizeMap.get(button);
+      button.style.left = `${ currentLeft }px`;
+      button.style.top = sharedTop;
+      currentLeft += (buttonSize ? buttonSize.width : fallbackWidth) + BUTTON_MARGIN_PX;
+    });
+
+    getControlledButtons().forEach((button) => {
+      if (button) button.style.display = 'block';
+    });
+  }
+
+  function init() {
+    createPrevButton();
+    createNextButton();
+    createZoomButtons();
+    updateEpisodeButtons();
+    positionEpisodeButtons();
+    setInterval(positionEpisodeButtons, LAYOUT_INTERVAL_MS);
+    window.addEventListener('resize', positionEpisodeButtons);
+    document.addEventListener('fullscreenchange', positionEpisodeButtons);
+  }
+
+  init();
 })();
