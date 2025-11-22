@@ -35,13 +35,9 @@ The content script is injected on each of the following origins (including subdo
 
 ## Installation (Chrome/Chromium)
 
-1. Clone or download this repository.
-2. Open Chrome and navigate to `chrome://extensions`.
-3. Enable **Developer mode** in the top-right corner.
-4. Click **Load unpacked** and choose the repository folder.
-5. Visit any supported HDRezka domain and start watching an episode—the overlay controls appear on top of the native timeline.
+1. https://chromewebstore.google.com/detail/hdrezka-comfort-view/jnmabcpplkemmnlcpinffgmceenfjknd
 
-> For other Chromium-based browsers (Brave, Edge, Vivaldi, Opera GX, etc.) follow their equivalent “load unpacked” flow.
+> For other Chromium-based browsers (Brave, Edge, Vivaldi, Opera GX, etc.) follow their equivalent extension installation flow.
 
 ## Usage tips
 
