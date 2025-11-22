@@ -29,18 +29,30 @@
   let castToggleButton;
   let castSessionListenerAttached = false;
   let castInitRequested = false;
+  let lastEpisodeKey = null;
+  let castBridgeState = null;
   let observedPlayButton = null;
   let playButtonHoverHandlers = null;
   let activeZoomStorageKey = null;
   const CAST_LABEL_START = 'Start Cast';
   const CAST_LABEL_STOP = 'Stop Cast';
   const CAST_MIN_WIDTH = 86;
+  const CAST_RESUME_MAX_ATTEMPTS = 6;
+  const CAST_RESUME_DELAY_MS = 600;
   const CAST_ICON_SVG = `
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M1,18 L1,21 L4,21 C4,19.3 2.66,18 1,18 Z"></path>
       <path d="M1,14 L1,16 C3.76,16 6,18.2 6,21 L8,21 C8,17.13 4.87,14 1,14 Z"></path>
       <path d="M1,10 L1,12 C5.97,12 10,16.0 10,21 L12,21 C12,14.92 7.07,10 1,10 Z"></path>
       <path d="M21,3 L3,3 C1.9,3 1,3.9 1,5 L1,8 L3,8 L3,5 L21,5 L21,19 L14,19 L14,21 L21,21 C22.1,21 23,20.1 23,19 L23,5 C23,3.9 22.1,3 21,3 Z"></path>
+    </svg>
+  `;
+  const CAST_ICON_SVG_ACTIVE = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M1,18 L1,21 L4,21 C4,19.3 2.66,18 1,18 Z"></path>
+      <path d="M1,14 L1,16 C3.76,16 6,18.2 6,21 L8,21 C8,17.13 4.87,14 1,14 Z"></path>
+      <path d="M1,10 L1,12 C5.97,12 10,16.0 10,21 L12,21 C12,14.92 7.07,10 1,10 Z" fill="currentColor"></path>
+      <path d="M21,3 L3,3 C1.9,3 1,3.9 1,5 L1,8 L3,8 L3,5 L21,5 L21,19 L14,19 L14,21 L21,21 C22.1,21 23,20.1 23,19 L23,5 C23,3.9 22.1,3 21,3 Z" fill="currentColor"></path>
     </svg>
   `;
 
@@ -107,7 +119,9 @@
   function updateEpisodeButtons() {
     updateEpisodeButton(prevButton, getPreviousEpisodeElement, getPrevButtonTooltip);
     updateEpisodeButton(nextButton, getNextEpisodeElement, getNextButtonTooltip);
-    updatePlayButtonTooltip();
+    const activeInfo = getActiveEpisodeInfo();
+    updatePlayButtonTooltip(activeInfo);
+    handleCastingEpisodeChange(activeInfo);
     syncZoomWithStorage();
     attachObserverToActive();
   }
@@ -175,11 +189,10 @@
     return `S${ info.season }:E${ info.episode }`;
   }
 
-  function updatePlayButtonTooltip() {
+  function updatePlayButtonTooltip(activeInfo = getActiveEpisodeInfo()) {
     const playElement = getPlayButtonElement();
     if (!playElement) return;
-    const info = getActiveEpisodeInfo();
-    const label = formatEpisodeLabel(info);
+    const label = formatEpisodeLabel(activeInfo || getActiveEpisodeInfo());
     if (!label) return;
     if (playElement.title !== label) {
       playElement.title = label;
@@ -438,14 +451,42 @@
     return context.getSessionState();
   }
 
+  function getNativeCastState() {
+    const btn = findNativeCastButton();
+    if (!btn) return null;
+    const connected = btn.querySelector('.cast_caf_state_c');
+    const disconnected = btn.querySelector('.cast_caf_state_d');
+    if (connected) return 'connected';
+    if (disconnected) return 'disconnected';
+    return null;
+  }
+
   function isCastSessionActive() {
-    if (!window.cast || !cast.framework || !cast.framework.SessionState) return false;
-    const state = getCastSessionState();
-    return (
-      state === cast.framework.SessionState.SESSION_STARTED ||
-      state === cast.framework.SessionState.SESSION_RESUMED ||
-      state === cast.framework.SessionState.SESSION_STARTING
-    );
+    if (typeof castBridgeState === 'boolean') {
+      return castBridgeState;
+    }
+    if (window.cast && cast.framework && cast.framework.SessionState) {
+      const state = getCastSessionState();
+      if (
+        state === cast.framework.SessionState.SESSION_STARTED ||
+        state === cast.framework.SessionState.SESSION_RESUMED ||
+        state === cast.framework.SessionState.SESSION_STARTING
+      ) {
+        return true;
+      }
+    }
+    const nativeState = getNativeCastState();
+    if (nativeState === 'connected') return true;
+    // Fallback: try to read PlayerJS internal flag (if exposed).
+    try {
+      const instance = window.pljssglobal && window.pljssglobal[0];
+      if (instance && instance.o && typeof instance.o.casting !== 'undefined') {
+        return Boolean(instance.o.casting);
+      }
+    } catch (error) {
+      // ignore
+    }
+    return false;
   }
 
   function findNativeCastButton() {
@@ -459,6 +500,7 @@
     const hasFramework = Boolean(context || nativeButton);
     const casting = hasFramework && isCastSessionActive();
     const tooltip = casting ? 'Stop casting' : 'Start casting';
+    castToggleButton.innerHTML = casting ? CAST_ICON_SVG_ACTIVE : CAST_ICON_SVG;
     castToggleButton.title = tooltip;
     castToggleButton.setAttribute('aria-label', tooltip);
     castToggleButton.classList.toggle('is-disabled', !hasFramework);
@@ -505,6 +547,47 @@
     }
   }
 
+  function attemptCastReload(attempt = 0) {
+    if (!isCastSessionActive()) return;
+    ensureCastInitialized(true);
+    const playerInstance = (window.pljssglobal && window.pljssglobal[0]) || null;
+    const api = getPlayerApi();
+    let triggered = false;
+    if (playerInstance && playerInstance.chromecast && typeof playerInstance.chromecast.Go === 'function') {
+      try {
+        playerInstance.chromecast.Go();
+        triggered = true;
+      } catch (error) {
+        // ignore
+      }
+    }
+    if (api) {
+      try {
+        api('seek', 0);
+        api('play');
+        triggered = true;
+      } catch (error) {
+        // ignore
+      }
+    }
+    const nextAttempt = attempt + 1;
+    if (!triggered && nextAttempt < CAST_RESUME_MAX_ATTEMPTS) {
+      setTimeout(() => attemptCastReload(nextAttempt), CAST_RESUME_DELAY_MS);
+    }
+  }
+
+  function handleCastingEpisodeChange(activeInfo) {
+    const key = activeInfo && activeInfo.season && activeInfo.episode ? `${ activeInfo.season }-${ activeInfo.episode }` : null;
+    if (key && key !== lastEpisodeKey) {
+      lastEpisodeKey = key;
+      if (isCastSessionActive()) {
+        attemptCastReload();
+      }
+    } else if (!key) {
+      lastEpisodeKey = null;
+    }
+  }
+
   function handleCastStateChange() {
     updateCastButtonState();
   }
@@ -514,6 +597,8 @@
     if (!context || castSessionListenerAttached) return;
     if (!window.cast || !cast.framework || !cast.framework.CastContextEventType) return;
     context.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, handleCastStateChange);
+    context.addEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, handleCastStateChange);
+    context.addEventListener(cast.framework.CastContextEventType.SESSION_ENDED, handleCastStateChange);
     castSessionListenerAttached = true;
   }
 
@@ -521,6 +606,95 @@
     ensureCastInitialized();
     attachCastSessionListener();
     updateCastButtonState();
+  }
+
+  function initCastBridge() {
+    if (document.getElementById('hdrezka-cast-bridge')) return;
+    const script = document.createElement('script');
+    script.id = 'hdrezka-cast-bridge';
+    script.textContent = `(() => {
+      if (window.__hdrezkaCastBridge) return;
+      window.__hdrezkaCastBridge = true;
+      const STARTED = () => window.cast && cast.framework && cast.framework.SessionState
+        ? cast.framework.SessionState.SESSION_STARTED
+        : null;
+      const RESUMED = () => window.cast && cast.framework && cast.framework.SessionState
+        ? cast.framework.SessionState.SESSION_RESUMED
+        : null;
+      const STARTING = () => window.cast && cast.framework && cast.framework.SessionState
+        ? cast.framework.SessionState.SESSION_STARTING
+        : null;
+      const emit = (state) => {
+        try {
+          document.dispatchEvent(new CustomEvent('hdrezka-cast-bridge', { detail: { casting: !!state } }));
+        } catch (error) {
+          // ignore
+        }
+      };
+      const evaluate = () => {
+        let casting = false;
+        try {
+          if (window.cast && cast.framework && cast.framework.CastContext) {
+            const ctx = cast.framework.CastContext.getInstance();
+            const s = ctx && ctx.getSessionState ? ctx.getSessionState() : null;
+            if (s && cast.framework.SessionState) {
+              if (s === STARTED() || s === RESUMED() || s === STARTING()) {
+                casting = true;
+              }
+            }
+          }
+        } catch (error) {
+          // ignore
+        }
+        if (!casting) {
+          try {
+            const btn = document.querySelector('#pjs_cast_button_cdnplayer');
+            if (btn && btn.querySelector('.cast_caf_state_c')) {
+              casting = true;
+            }
+          } catch (error) {
+            // ignore
+          }
+        }
+        emit(casting);
+      };
+      const attach = () => {
+        try {
+          if (!window.cast || !cast.framework || !cast.framework.CastContext || !cast.framework.CastContextEventType) {
+            return false;
+          }
+          const ctx = cast.framework.CastContext.getInstance();
+          const types = cast.framework.CastContextEventType;
+          ctx.addEventListener(types.SESSION_STATE_CHANGED, evaluate);
+          ctx.addEventListener(types.CAST_STATE_CHANGED, evaluate);
+          ctx.addEventListener(types.SESSION_ENDED, evaluate);
+          evaluate();
+          return true;
+        } catch (error) {
+          return false;
+        }
+      };
+      if (!attach()) {
+        const orig = window.__onGCastApiAvailable;
+        window.__onGCastApiAvailable = function(avail) {
+          try { if (typeof orig === 'function') { orig(avail); } } catch (error) {}
+          if (avail) {
+            setTimeout(attach, 50);
+          }
+        };
+      }
+      document.addEventListener('DOMContentLoaded', evaluate);
+    })();`;
+    (document.documentElement || document.head || document.body).appendChild(script);
+
+    document.addEventListener('hdrezka-cast-bridge', (event) => {
+      if (!event || !event.detail) return;
+      const nextState = Boolean(event.detail.casting);
+      if (castBridgeState !== nextState) {
+        castBridgeState = nextState;
+        updateCastButtonState();
+      }
+    });
   }
 
   function createCastToggleButton() {
@@ -982,6 +1156,7 @@
   }
 
   function init() {
+    initCastBridge();
     createPrevButton();
     createNextButton();
     createZoomButtons();
