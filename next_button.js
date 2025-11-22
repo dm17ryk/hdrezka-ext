@@ -474,13 +474,9 @@
     if (!castToggleButton || castToggleButton.classList.contains('is-disabled')) {
       return;
     }
+
     ensureCastInitialized(true);
-    const nativeButton = findNativeCastButton();
-    if (nativeButton) {
-      nativeButton.click();
-      return;
-    }
-    const context = getCastContext();
+    let context = getCastContext();
     if (context) {
       const active = isCastSessionActive();
       if (active && typeof context.endCurrentSession === 'function') {
@@ -492,8 +488,21 @@
       } else if (typeof context.requestSession === 'function') {
         context.requestSession().catch(() => updateCastButtonState());
       }
+      return;
     }
-    updateCastButtonState();
+
+    const nativeButton = findNativeCastButton();
+    if (nativeButton) {
+      nativeButton.click();
+      return;
+    }
+
+    context = getCastContext();
+    if (context && typeof context.requestSession === 'function') {
+      context.requestSession().catch(() => updateCastButtonState());
+    } else {
+      updateCastButtonState();
+    }
   }
 
   function handleCastStateChange() {

@@ -1,0 +1,4 @@
+cd "C:\Program Files\Google\Chrome\Application"
+.\chrome.exe --remote-debugging-port=9222 --no-first-run --user-data-dir="C:\tmp\chrome-devtools"
+ssh ubuntu_wsl_tun -N
+netstat -ano | findstr :9222
