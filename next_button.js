@@ -26,9 +26,23 @@
   const ZOOM_PRECISION = 2;
   const ZOOM_COOKIE_PREFIX = 'hdrezka_zoom_';
   let currentZoomLevel = 1;
+  let castToggleButton;
+  let castSessionListenerAttached = false;
+  let castInitRequested = false;
   let observedPlayButton = null;
   let playButtonHoverHandlers = null;
   let activeZoomStorageKey = null;
+  const CAST_LABEL_START = 'Start Cast';
+  const CAST_LABEL_STOP = 'Stop Cast';
+  const CAST_MIN_WIDTH = 86;
+  const CAST_ICON_SVG = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M1,18 L1,21 L4,21 C4,19.3 2.66,18 1,18 Z"></path>
+      <path d="M1,14 L1,16 C3.76,16 6,18.2 6,21 L8,21 C8,17.13 4.87,14 1,14 Z"></path>
+      <path d="M1,10 L1,12 C5.97,12 10,16.0 10,21 L12,21 C12,14.92 7.07,10 1,10 Z"></path>
+      <path d="M21,3 L3,3 C1.9,3 1,3.9 1,5 L1,8 L3,8 L3,5 L21,5 L21,19 L14,19 L14,21 L21,21 C22.1,21 23,20.1 23,19 L23,5 C23,3.9 22.1,3 21,3 Z"></path>
+    </svg>
+  `;
 
   function attachObserverToActive() {
     const activeEpisode = document.querySelector('.b-simple_episode__item.active');
@@ -259,7 +273,7 @@
   }
 
   function getControlledButtons() {
-    return [prevButton, nextButton, zoomOutButton, zoomResetButton, zoomInButton].filter(Boolean);
+    return [prevButton, nextButton, zoomOutButton, zoomResetButton, zoomInButton, castToggleButton].filter(Boolean);
   }
 
   function getVideoElement() {
@@ -388,6 +402,129 @@
     }
   }
 
+  function getPlayerApi() {
+    if (!window.pljssglobal || !Array.isArray(window.pljssglobal) || window.pljssglobal.length === 0) {
+      return null;
+    }
+    const instance = window.pljssglobal[0];
+    return instance && typeof instance.api === 'function' ? instance.api : null;
+  }
+
+  function ensureCastInitialized(force = false) {
+    const api = getPlayerApi();
+    if (!api) return false;
+    if (castInitRequested && !force) return true;
+    castInitRequested = true;
+    try {
+      api('castinit');
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function getCastContext() {
+    if (!window.cast || !cast.framework || !cast.framework.CastContext) {
+      return null;
+    }
+    return cast.framework.CastContext.getInstance();
+  }
+
+  function getCastSessionState() {
+    const context = getCastContext();
+    if (!context || typeof context.getSessionState !== 'function') {
+      return null;
+    }
+    return context.getSessionState();
+  }
+
+  function isCastSessionActive() {
+    if (!window.cast || !cast.framework || !cast.framework.SessionState) return false;
+    const state = getCastSessionState();
+    return (
+      state === cast.framework.SessionState.SESSION_STARTED ||
+      state === cast.framework.SessionState.SESSION_RESUMED ||
+      state === cast.framework.SessionState.SESSION_STARTING
+    );
+  }
+
+  function findNativeCastButton() {
+    return document.querySelector('#pjs_cast_button_cdnplayer, google-cast-button, button[is="google-cast-button"]');
+  }
+
+  function updateCastButtonState() {
+    if (!castToggleButton) return;
+    const context = getCastContext();
+    const nativeButton = findNativeCastButton();
+    const hasFramework = Boolean(context || nativeButton);
+    const casting = hasFramework && isCastSessionActive();
+    const tooltip = casting ? 'Stop casting' : 'Start casting';
+    castToggleButton.title = tooltip;
+    castToggleButton.setAttribute('aria-label', tooltip);
+    castToggleButton.classList.toggle('is-disabled', !hasFramework);
+    if (!hasFramework) {
+      castToggleButton.dataset.isHovered = 'false';
+    }
+  }
+
+  function handleCastToggle(event) {
+    if (event && typeof event.stopPropagation === 'function') {
+      event.stopPropagation();
+    }
+    if (!castToggleButton || castToggleButton.classList.contains('is-disabled')) {
+      return;
+    }
+    ensureCastInitialized(true);
+    const nativeButton = findNativeCastButton();
+    if (nativeButton) {
+      nativeButton.click();
+      return;
+    }
+    const context = getCastContext();
+    if (context) {
+      const active = isCastSessionActive();
+      if (active && typeof context.endCurrentSession === 'function') {
+        try {
+          context.endCurrentSession(true);
+        } catch (error) {
+          // ignore
+        }
+      } else if (typeof context.requestSession === 'function') {
+        context.requestSession().catch(() => updateCastButtonState());
+      }
+    }
+    updateCastButtonState();
+  }
+
+  function handleCastStateChange() {
+    updateCastButtonState();
+  }
+
+  function attachCastSessionListener() {
+    const context = getCastContext();
+    if (!context || castSessionListenerAttached) return;
+    if (!window.cast || !cast.framework || !cast.framework.CastContextEventType) return;
+    context.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, handleCastStateChange);
+    castSessionListenerAttached = true;
+  }
+
+  function syncCastIntegration() {
+    ensureCastInitialized();
+    attachCastSessionListener();
+    updateCastButtonState();
+  }
+
+  function createCastToggleButton() {
+    castToggleButton = createEpisodeButton('cast-toggle-button', CAST_ICON_SVG, handleCastToggle);
+    const tooltip = 'Start casting';
+    castToggleButton.title = tooltip;
+    castToggleButton.setAttribute('aria-label', tooltip);
+    castToggleButton.dataset.minWidth = '32';
+    castToggleButton.dataset.minHeight = '32';
+    mountEpisodeButton(castToggleButton);
+    updateCastButtonState();
+  }
+
   function applyButtonStyles(controlInfo, targetButton = nextButton) {
     const button = targetButton || nextButton;
     if (!button) return;
@@ -431,7 +568,14 @@
   function reserveTimelineSpace() {
     const timeline = document.getElementById('cdnplayer_control_timeline');
     if (timeline) {
-      timeline.style.setProperty('padding-right', `${ TIMELINE_PADDING_PX }px`, 'important');
+      const buttons = getControlledButtons();
+      const estimatedWidth = buttons.reduce((total, button, index) => {
+        const width = parseFloat(button.style.width) || button.offsetWidth || 48;
+        const margin = index === 0 ? 0 : BUTTON_MARGIN_PX;
+        return total + width + margin;
+      }, BUTTON_MARGIN_PX * 2);
+      const padding = Math.max(TIMELINE_PADDING_PX, estimatedWidth);
+      timeline.style.setProperty('padding-right', `${ padding }px`, 'important');
     }
   }
 
@@ -623,8 +767,10 @@
   function setButtonSize(width, height, targetButton = nextButton) {
     const button = targetButton || nextButton;
     if (!button) return { width: 0, height: 0 };
-    const clampedWidth = Math.max(24, Math.min(120, Math.round(width || 32)));
-    const clampedHeight = Math.max(24, Math.min(120, Math.round(height || clampedWidth)));
+    const minWidth = button.dataset.minWidth ? parseInt(button.dataset.minWidth, 10) : 24;
+    const minHeight = button.dataset.minHeight ? parseInt(button.dataset.minHeight, 10) : 24;
+    const clampedWidth = Math.max(minWidth || 24, Math.min(120, Math.round(width || 32)));
+    const clampedHeight = Math.max(minHeight || 24, Math.min(120, Math.round(height || clampedWidth)));
     button.style.width = `${ clampedWidth }px`;
     button.style.height = `${ clampedHeight }px`;
     button.style.lineHeight = `${ clampedHeight }px`;
@@ -720,6 +866,7 @@
 
   function positionEpisodeButtons() {
     if (!nextButton || !prevButton) return;
+    syncCastIntegration();
     ensureAttached();
     applyZoomToVideoElement();
     updatePlayButtonTooltip();
@@ -768,7 +915,7 @@
       prevButton.style.top = sharedTop;
 
       let currentLeft = nextDisplayLeft + nextSize.width + BUTTON_MARGIN_PX;
-      [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => {
+      [zoomOutButton, zoomResetButton, zoomInButton, castToggleButton].forEach((button) => {
         if (!button) return;
         const buttonSize = sizeMap.get(button);
         button.style.left = `${ currentLeft }px`;
@@ -812,7 +959,7 @@
     prevButton.style.top = sharedTop;
 
     let currentLeft = nextDisplayLeft + fallbackWidth + BUTTON_MARGIN_PX;
-    [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => {
+    [zoomOutButton, zoomResetButton, zoomInButton, castToggleButton].forEach((button) => {
       if (!button) return;
       const buttonSize = sizeMap.get(button);
       button.style.left = `${ currentLeft }px`;
@@ -829,6 +976,7 @@
     createPrevButton();
     createNextButton();
     createZoomButtons();
+    createCastToggleButton();
     updateEpisodeButtons();
     positionEpisodeButtons();
     setInterval(positionEpisodeButtons, LAYOUT_INTERVAL_MS);

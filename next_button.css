@@ -4,7 +4,8 @@
 #prev-episode-button,
 #zoom-out-button,
 #zoom-reset-button,
-#zoom-in-button {
+#zoom-in-button,
+#cast-toggle-button {
     position: absolute;
     top: 0;
     left: 0;
@@ -37,7 +38,8 @@
 }
 
 #next-episode-button svg,
-#prev-episode-button svg {
+#prev-episode-button svg,
+#cast-toggle-button svg {
     width: 80%;
     height: 80%;
     align-content: center;
@@ -50,11 +52,17 @@
     transform: scaleX(-1);
 }
 
+#cast-toggle-button svg {
+    width: 70%;
+    height: 70%;
+}
+
 #next-episode-button:hover,
 #prev-episode-button:hover,
 #zoom-out-button:hover,
 #zoom-reset-button:hover,
-#zoom-in-button:hover {
+#zoom-in-button:hover,
+#cast-toggle-button:hover {
     background: rgb(0, 173, 239);
 }
 
@@ -62,7 +70,8 @@
 #prev-episode-button.is-disabled,
 #zoom-out-button.is-disabled,
 #zoom-reset-button.is-disabled,
-#zoom-in-button.is-disabled {
+#zoom-in-button.is-disabled,
+#cast-toggle-button.is-disabled {
     cursor: default;
     pointer-events: none;
     opacity: 0.4;
