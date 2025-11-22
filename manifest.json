@@ -28,8 +28,5 @@
                 "next_button.css"
             ]
         }
-    ],
-    "permissions": [
-        "activeTab"
     ]
 }
