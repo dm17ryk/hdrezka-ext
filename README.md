@@ -1,6 +1,10 @@
 # HDRezka Comfort View
 
+<img width="1024" height="1024" alt="ChatGPT Image Nov 22, 2025, 02_55_46 PM" src="https://github.com/user-attachments/assets/3a3613de-c4a6-4030-b74f-cb249c48b63f" />
+
 > Chrome extension that keeps HDRezka binge-friendly with floating episode controls and per-show zoom memory.
+>
+> Расширение Chrome, которое делает HDRezka удобным для просмотра в полноэкранном режиме, благодаря плавающим элементам управления эпизодами и памяти масштабирования для каждого эпизода.
 
 <img width="930" height="1105" alt="next-button-look-new-21" src="https://github.com/user-attachments/assets/aae7ded0-7e2e-4401-aa0a-9ab35e40b994" />
 
