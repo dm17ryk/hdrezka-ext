@@ -5,7 +5,6 @@
 #zoom-out-button,
 #zoom-reset-button,
 #zoom-in-button,
-#rewind-button,
 #cast-toggle-button {
     position: absolute;
     top: 0;
@@ -63,7 +62,6 @@
 #zoom-out-button:hover,
 #zoom-reset-button:hover,
 #zoom-in-button:hover,
-#rewind-button:hover,
 #cast-toggle-button:hover {
     background: rgb(0, 173, 239);
 }
@@ -73,7 +71,6 @@
 #zoom-out-button.is-disabled,
 #zoom-reset-button.is-disabled,
 #zoom-in-button.is-disabled,
-#rewind-button.is-disabled,
 #cast-toggle-button.is-disabled {
     cursor: default;
     pointer-events: none;

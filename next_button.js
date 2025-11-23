@@ -37,8 +37,9 @@
   const AUTO_CAST_NEXT_DELAY_MS = 300;
   const AUTO_CAST_PLAY_DELAY_MS = 2000;
   const AUTO_CAST_PLAY_RETRY_MS = 2000;
+  const AUTO_CAST_SEEK_DELAY_MS = 300;
   const AUTO_CAST_MAX_RETRIES = 3;
-  const AUTO_CAST_NEAR_END_RATIO = 0.97;
+  const AUTO_CAST_NEAR_END_RATIO = 0.99;
   const autoAdvanceState = {
     phase: 'idle', // idle | waiting_start | ensure_play
     key: null,
@@ -304,14 +305,13 @@
     zoomOutButton = createZoomButton('zoom-out-button', '▬', 'Zoom video out', () => adjustVideoZoom(-ZOOM_STEP));
     zoomResetButton = createZoomButton('zoom-reset-button', 'Z-Reset', 'Reset zoom', () => setVideoZoom(1));
     zoomInButton = createZoomButton('zoom-in-button', '✚', 'Zoom video in', () => adjustVideoZoom(ZOOM_STEP));
-    rewindButton = createZoomButton('rewind-button', '<<<', 'Seek to start', () => seekViaTimeline(0.001));
-    [zoomOutButton, zoomResetButton, zoomInButton, rewindButton].forEach((button) => mountEpisodeButton(button));
+    [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => mountEpisodeButton(button));
     updateZoomButtonsState();
     refreshZoomTooltips();
   }
 
   function getControlledButtons() {
-    return [prevButton, nextButton, zoomOutButton, zoomResetButton, zoomInButton, rewindButton, castToggleButton].filter(Boolean);
+    return [prevButton, nextButton, zoomOutButton, zoomResetButton, zoomInButton, castToggleButton].filter(Boolean);
   }
 
   function getVideoElement() {
@@ -652,19 +652,15 @@
     if ((!timeValid || !durationValid) && ratioFromTimeline !== null) {
       if (durationValid) {
         time = Math.max(0, Math.min(duration, duration * ratioFromTimeline));
-        console.log(AUTO_LOG_PREFIX, 'time from timeline', { time, duration, ratio: ratioFromTimeline, ...logBase });
       } else if (timeValid) {
         duration = time / Math.max(ratioFromTimeline, 0.0001);
-        console.log(AUTO_LOG_PREFIX, 'duration from timeline', { time, duration, ratio: ratioFromTimeline, ...logBase });
       }
     }
 
     if (!Number.isFinite(time) || !Number.isFinite(duration)) {
       if (ratioFromTimeline !== null) {
-        console.log(AUTO_LOG_PREFIX, 'using ratio only', { ratio: ratioFromTimeline, ...logBase });
         return { time: null, duration: null, ratio: ratioFromTimeline };
       }
-      console.log(AUTO_LOG_PREFIX, 'no playback times', { time, duration, ...logBase });
       return null;
     }
     return { time, duration, ratio: duration > 0 ? time / duration : null };
@@ -763,7 +759,6 @@
         dispatch(type, ctor, { clientX: x, clientY: y, target: el });
       });
     });
-    console.log(AUTO_LOG_PREFIX, 'seekViaTimeline', { ratio: clamped, targets: targets.length });
     return true;
   }
 
@@ -777,63 +772,6 @@
     }
   });
 
-  function injectPageSeekHelper() {
-    if (document.getElementById('hdrezka-seek-helper')) return;
-    const code = `
-      (function() {
-        if (window.hdrezkaForceSeek) return;
-        function playApi(percent) {
-          const inst = window.pljssglobal && window.pljssglobal[0];
-          if (!inst || !inst.api) return false;
-          try {
-            inst.api('seek', percent + '%');
-            inst.api('play');
-            return true;
-          } catch (e) {
-            return false;
-          }
-        }
-        function seekTimeline(ratio) {
-          const timeline = document.getElementById('cdnplayer_control_timeline');
-          if (!timeline) return false;
-          const bars = Array.from(timeline.querySelectorAll('pjsdiv')).find(el => el.children && el.children.length >= 3) || timeline;
-          const rect = bars.getBoundingClientRect();
-          const clamped = Math.max(0, Math.min(1, typeof ratio === 'number' ? ratio : 0));
-          const x = rect.left + clamped * rect.width;
-          const y = rect.top + rect.height / 2;
-          ['mousemove','mousedown','mouseup','click'].forEach(type => {
-            const evt = new MouseEvent(type, { bubbles:true, cancelable:true, view:window, clientX:x, clientY:y, button:0, buttons:1 });
-            bars.dispatchEvent(evt);
-          });
-          return true;
-        }
-        window.hdrezkaForceSeek = function(ratio) {
-          const clamped = Math.max(0, Math.min(1, typeof ratio === 'number' ? ratio : 0));
-          const percent = Math.round(clamped * 100);
-          if (playApi(percent)) {
-            console.log('[hdrezka][seek-helper] via api %', percent);
-            return true;
-          }
-          const res = seekTimeline(clamped);
-          console.log('[hdrezka][seek-helper] via timeline', { ratio: clamped, res });
-          return res;
-        };
-        window.addEventListener('message', (event) => {
-          if (event.source !== window) return;
-          const data = event.data;
-          if (!data || typeof data !== 'object') return;
-          if (data.type === 'hdrezka_seek_timeline_force') {
-            window.hdrezkaForceSeek(typeof data.ratio === 'number' ? data.ratio : 0);
-          }
-        });
-      })();
-    `;
-    const blob = new Blob([code], { type: 'text/javascript' });
-    const script = document.createElement('script');
-    script.id = 'hdrezka-seek-helper';
-    script.src = URL.createObjectURL(blob);
-    (document.documentElement || document.head || document.body).appendChild(script);
-  }
 
   function resetAutoAdvanceState() {
     autoAdvanceState.phase = 'idle';
@@ -843,7 +781,7 @@
     autoAdvanceState.waitStartUntil = 0;
     autoAdvanceState.waitPlayUntil = 0;
     autoAdvanceState.ensureAttempts = 0;
-    console.log(AUTO_LOG_PREFIX, 'state reset');
+    // console.log(AUTO_LOG_PREFIX, 'state reset');
   }
 
   function maybeAutoAdvanceCast() {
@@ -854,7 +792,7 @@
       } catch (error) {
         // ignore
       }
-      console.log(AUTO_LOG_PREFIX, 'casting not active, reset');
+      // console.log(AUTO_LOG_PREFIX, 'casting not active, reset');
       return;
     }
 
@@ -867,12 +805,12 @@
       } catch (error) {
         // ignore
       }
-      console.log(AUTO_LOG_PREFIX, 'no active episode key');
+      // console.log(AUTO_LOG_PREFIX, 'no active episode key');
       return;
     }
     if (autoAdvanceState.key && autoAdvanceState.key !== key) {
       resetAutoAdvanceState();
-      console.log(AUTO_LOG_PREFIX, 'episode changed, reset state', { key });
+      // console.log(AUTO_LOG_PREFIX, 'episode changed, reset state', { key });
     }
     autoAdvanceState.key = key;
 
@@ -883,7 +821,7 @@
       } catch (error) {
         // ignore
       }
-      console.log(AUTO_LOG_PREFIX, 'no next episode', { key });
+      // console.log(AUTO_LOG_PREFIX, 'no next episode', { key });
       autoAdvanceState.phase = 'idle';
       return;
     }
@@ -895,7 +833,7 @@
       } catch (error) {
         // ignore
       }
-      console.log(AUTO_LOG_PREFIX, 'no playback times', { key });
+      // console.log(AUTO_LOG_PREFIX, 'no playback times', { key });
       autoAdvanceState.phase = 'idle';
       return;
     }
@@ -931,20 +869,25 @@
       (ratio !== null && ratio >= AUTO_CAST_NEAR_END_RATIO);
 
     if (autoAdvanceState.phase === 'idle') {
-      if (nearEnd) {
+      if (nearEnd)
+      {
         autoAdvanceState.phase = 'waiting_start';
         autoAdvanceState.lastTime = Number.isFinite(times.time) ? times.time : 0;
         autoAdvanceState.lastRatio = Number.isFinite(ratio) ? ratio : 0;
         autoAdvanceState.waitStartUntil = now + AUTO_CAST_SEEK_DELAY_MS + 800;
         const usedTimeline = seekViaTimeline(0.001);
-        if (!usedTimeline) {
+        if (!usedTimeline)
+        {
           const api = getPlayerApi();
-          if (api) {
-            try {
+          if (api)
+          {
+            try
+            {
               api('seek', 1);
               api('play');
               console.log(AUTO_LOG_PREFIX, 'fallback api seek', { key });
-            } catch (error) {
+            } catch (error)
+            {
               // ignore
             }
           }
@@ -957,6 +900,10 @@
           ratio,
           usedTimeline
         });
+      }
+      else
+      {
+        console.log(AUTO_LOG_PREFIX, 'not nearEnd', { nearEnd,  ratio, remaining, key  });
       }
       return;
     }
@@ -1099,7 +1046,7 @@
         console.log(AUTO_LOG_PREFIX, 'native cast read failed', error);
       }
     }
-    console.log(AUTO_LOG_PREFIX, 'cast state', { casting, ctxState, nativeInfo });
+    // console.log(AUTO_LOG_PREFIX, 'cast state', { casting, ctxState, nativeInfo });
     return casting;
   }
   function createCastToggleButton() {
@@ -1561,7 +1508,6 @@
   }
 
   function init() {
-    injectPageSeekHelper();
     createPrevButton();
     createNextButton();
     createZoomButtons();
