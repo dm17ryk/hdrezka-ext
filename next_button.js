@@ -60,6 +60,7 @@
   const CAST_RESUME_DELAY_MS = 600;
   let castHelperInjected = false;
   let castHelperReady = false;
+  let castReloadTimer = null;
   const CAST_ICON_SVG = `
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <g>
@@ -235,6 +236,7 @@
       prevEpisode.click();
       setTimeout(updateEpisodeButtons, 2000);
       setTimeout(startEpisodePlayback, 2000);
+      scheduleCastReload();
     }
   }
 
@@ -244,6 +246,7 @@
       nextEpisode.click();
       setTimeout(updateEpisodeButtons, 2000);
       setTimeout(startEpisodePlayback, 2000);
+      scheduleCastReload();
     }
   }
 
@@ -593,7 +596,8 @@
     }
   }
 
-  function attemptCastReload(attempt = 0) {
+  function attemptCastReload(attempt = 0, options = {}) {
+    const { seekToStart = false } = options;
     if (!isCastSessionActive()) return;
     injectCastHelper();
     ensureCastInitialized(true);
@@ -602,7 +606,8 @@
     let triggered = false;
 
     const bridgePosted = postCastControl('recast');
-    if (castHelperReady && bridgePosted) {
+    const bridgeSeek = seekToStart ? postCastControl('seekPercent', { percent: 0 }) : false;
+    if (castHelperReady && (bridgePosted || bridgeSeek)) {
       triggered = true;
     }
 
@@ -625,8 +630,21 @@
     }
     const nextAttempt = attempt + 1;
     if (!triggered && nextAttempt < CAST_RESUME_MAX_ATTEMPTS) {
-      setTimeout(() => attemptCastReload(nextAttempt), CAST_RESUME_DELAY_MS);
+      setTimeout(() => attemptCastReload(nextAttempt, options), CAST_RESUME_DELAY_MS);
     }
+  }
+
+  function scheduleCastReload() {
+    if (!isCastSessionActive()) return;
+    injectCastHelper();
+    if (castReloadTimer) {
+      clearTimeout(castReloadTimer);
+    }
+    castReloadTimer = setTimeout(() => {
+      attemptCastReload(0, { seekToStart: true });
+      setTimeout(() => attemptCastReload(1, { seekToStart: true }), CAST_RESUME_DELAY_MS);
+      castReloadTimer = null;
+    }, 800);
   }
 
   function handleCastingEpisodeChange(activeInfo) {
@@ -635,7 +653,7 @@
       lastEpisodeKey = key;
       resetAutoAdvanceState();
       if (isCastSessionActive()) {
-        attemptCastReload();
+        scheduleCastReload();
       }
     } else if (!key) {
       lastEpisodeKey = null;
