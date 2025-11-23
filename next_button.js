@@ -31,6 +31,23 @@
   let castInitRequested = false;
   let lastEpisodeKey = null;
   let castBridgeState = null;
+  let endEventHooked = false;
+  const AUTO_CAST_PREP_OFFSET_SEC = 1.2;
+  const AUTO_CAST_NEXT_DELAY_MS = 300;
+  const AUTO_CAST_PLAY_DELAY_MS = 2000;
+  const AUTO_CAST_PLAY_RETRY_MS = 2000;
+  const AUTO_CAST_MAX_RETRIES = 3;
+  const AUTO_CAST_NEAR_END_RATIO = 0.97;
+  const autoAdvanceState = {
+    phase: 'idle', // idle | waiting_start | ensure_play
+    key: null,
+    lastTime: 0,
+    lastRatio: 0,
+    waitStartUntil: 0,
+    waitPlayUntil: 0,
+    ensureAttempts: 0
+  };
+  const AUTO_LOG_PREFIX = '[hdrezka][auto]';
   let observedPlayButton = null;
   let playButtonHoverHandlers = null;
   let activeZoomStorageKey = null;
@@ -468,31 +485,12 @@
   }
 
   function isCastSessionActive() {
-    if (typeof castBridgeState === 'boolean') {
-      return castBridgeState;
+    const state = computeCastState();
+    if (castBridgeState !== state) {
+      castBridgeState = state;
+      updateCastButtonState();
     }
-    if (window.cast && cast.framework && cast.framework.SessionState) {
-      const state = getCastSessionState();
-      if (
-        state === cast.framework.SessionState.SESSION_STARTED ||
-        state === cast.framework.SessionState.SESSION_RESUMED ||
-        state === cast.framework.SessionState.SESSION_STARTING
-      ) {
-        return true;
-      }
-    }
-    const nativeState = getNativeCastState();
-    if (nativeState === 'connected') return true;
-    // Fallback: try to read PlayerJS internal flag (if exposed).
-    try {
-      const instance = window.pljssglobal && window.pljssglobal[0];
-      if (instance && instance.o && typeof instance.o.casting !== 'undefined') {
-        return Boolean(instance.o.casting);
-      }
-    } catch (error) {
-      // ignore
-    }
-    return false;
+    return state;
   }
 
   function findNativeCastButton() {
@@ -586,11 +584,13 @@
     const key = activeInfo && activeInfo.season && activeInfo.episode ? `${ activeInfo.season }-${ activeInfo.episode }` : null;
     if (key && key !== lastEpisodeKey) {
       lastEpisodeKey = key;
+      resetAutoAdvanceState();
       if (isCastSessionActive()) {
         attemptCastReload();
       }
     } else if (!key) {
       lastEpisodeKey = null;
+      resetAutoAdvanceState();
     }
   }
 
@@ -608,101 +608,338 @@
     castSessionListenerAttached = true;
   }
 
-  function syncCastIntegration() {
-    ensureCastInitialized();
-    attachCastSessionListener();
-    updateCastButtonState();
+  function getPlaybackTimes() {
+    const api = getPlayerApi();
+    const instance = window.pljssglobal && window.pljssglobal[0];
+    const chromecast = instance && instance.chromecast ? instance.chromecast : null;
+    const timelineInfo = readTimelineProgress();
+    const logBase = timelineInfo ? { timeline: timelineInfo } : {};
+
+    // When casting, prefer the chromecast time/duration helpers if available.
+    if (isCastSessionActive() && chromecast) {
+      try {
+        const time = Number(chromecast.Time ? chromecast.Time() : NaN);
+        const duration = Number(chromecast.Duration ? chromecast.Duration() : NaN);
+        if (Number.isFinite(time) && Number.isFinite(duration)) {
+          return { time, duration, ratio: duration > 0 ? time / duration : null };
+        }
+      } catch (error) {
+        console.log(AUTO_LOG_PREFIX, 'chromecast time read failed', error);
+      }
+    }
+
+    let time = null;
+    let duration = null;
+    if (api) {
+      try {
+        time = Number(api('time'));
+      } catch (error) {
+        console.log(AUTO_LOG_PREFIX, 'api time read failed', error);
+      }
+      try {
+        duration = Number(api('duration'));
+      } catch (error) {
+        console.log(AUTO_LOG_PREFIX, 'api duration read failed', error);
+      }
+    }
+
+    const durationValid = Number.isFinite(duration) && duration > 0;
+    const timeValid = Number.isFinite(time) && time >= 0;
+    const ratioFromTimeline = timelineInfo && timelineInfo.total > 0 ? timelineInfo.elapsed / timelineInfo.total : null;
+
+    if ((!timeValid || !durationValid) && ratioFromTimeline !== null) {
+      if (durationValid) {
+        time = Math.max(0, Math.min(duration, duration * ratioFromTimeline));
+        console.log(AUTO_LOG_PREFIX, 'time from timeline', { time, duration, ratio: ratioFromTimeline, ...logBase });
+      } else if (timeValid) {
+        duration = time / Math.max(ratioFromTimeline, 0.0001);
+        console.log(AUTO_LOG_PREFIX, 'duration from timeline', { time, duration, ratio: ratioFromTimeline, ...logBase });
+      }
+    }
+
+    if (!Number.isFinite(time) || !Number.isFinite(duration)) {
+      if (ratioFromTimeline !== null) {
+        console.log(AUTO_LOG_PREFIX, 'using ratio only', { ratio: ratioFromTimeline, ...logBase });
+        return { time: null, duration: null, ratio: ratioFromTimeline };
+      }
+      console.log(AUTO_LOG_PREFIX, 'no playback times', { time, duration, ...logBase });
+      return null;
+    }
+    return { time, duration, ratio: duration > 0 ? time / duration : null };
   }
 
-  function initCastBridge() {
-    if (document.getElementById('hdrezka-cast-bridge')) return;
-    const script = document.createElement('script');
-    script.id = 'hdrezka-cast-bridge';
-    script.textContent = `(() => {
-      if (window.__hdrezkaCastBridge) return;
-      window.__hdrezkaCastBridge = true;
-      const STARTED = () => window.cast && cast.framework && cast.framework.SessionState
-        ? cast.framework.SessionState.SESSION_STARTED
-        : null;
-      const RESUMED = () => window.cast && cast.framework && cast.framework.SessionState
-        ? cast.framework.SessionState.SESSION_RESUMED
-        : null;
-      const STARTING = () => window.cast && cast.framework && cast.framework.SessionState
-        ? cast.framework.SessionState.SESSION_STARTING
-        : null;
-      const emit = (state) => {
-        try {
-          document.dispatchEvent(new CustomEvent('hdrezka-cast-bridge', { detail: { casting: !!state } }));
-        } catch (error) {
-          // ignore
-        }
+  function readTimelineProgress() {
+    const timeline = document.getElementById('cdnplayer_control_timeline');
+    if (!timeline) return null;
+    const all = Array.from(timeline.querySelectorAll('pjsdiv'));
+    const candidate = all.find((el) => el.children && el.children.length >= 3);
+    if (!candidate) return null;
+    const bars = Array.from(candidate.children);
+    if (bars.length < 3) return null;
+    const total = bars[0].getBoundingClientRect().width || 0;
+    const elapsed = bars[2].getBoundingClientRect().width || 0;
+    return { total, elapsed };
+  }
+
+  function resetAutoAdvanceState() {
+    autoAdvanceState.phase = 'idle';
+    autoAdvanceState.key = null;
+    autoAdvanceState.lastTime = 0;
+    autoAdvanceState.lastRatio = 0;
+    autoAdvanceState.waitStartUntil = 0;
+    autoAdvanceState.waitPlayUntil = 0;
+    autoAdvanceState.ensureAttempts = 0;
+    console.log(AUTO_LOG_PREFIX, 'state reset');
+  }
+
+  function maybeAutoAdvanceCast() {
+    if (!isCastSessionActive()) {
+      resetAutoAdvanceState();
+      try {
+        window.__hdrezkaAutoState = { casting: false, reason: 'not_casting' };
+      } catch (error) {
+        // ignore
+      }
+      console.log(AUTO_LOG_PREFIX, 'casting not active, reset');
+      return;
+    }
+
+    const info = getActiveEpisodeInfo();
+    const key = info && info.season && info.episode ? `${ info.season }-${ info.episode }` : null;
+    if (!key) {
+      resetAutoAdvanceState();
+      try {
+        window.__hdrezkaAutoState = { casting: true, reason: 'no-active-key' };
+      } catch (error) {
+        // ignore
+      }
+      console.log(AUTO_LOG_PREFIX, 'no active episode key');
+      return;
+    }
+    if (autoAdvanceState.key && autoAdvanceState.key !== key) {
+      resetAutoAdvanceState();
+      console.log(AUTO_LOG_PREFIX, 'episode changed, reset state', { key });
+    }
+    autoAdvanceState.key = key;
+
+    const nextEpisode = getNextEpisodeElement();
+    if (!nextEpisode) {
+      try {
+        window.__hdrezkaAutoState = { casting: true, key, reason: 'no-next-episode' };
+      } catch (error) {
+        // ignore
+      }
+      console.log(AUTO_LOG_PREFIX, 'no next episode', { key });
+      autoAdvanceState.phase = 'idle';
+      return;
+    }
+
+    const times = getPlaybackTimes();
+    if (!times) {
+      try {
+        window.__hdrezkaAutoState = { casting: true, key, reason: 'no-times' };
+      } catch (error) {
+        // ignore
+      }
+      console.log(AUTO_LOG_PREFIX, 'no playback times', { key });
+      autoAdvanceState.phase = 'idle';
+      return;
+    }
+
+    const remaining = Number.isFinite(times.duration) && Number.isFinite(times.time)
+      ? times.duration - times.time
+      : null;
+    const ratio = times.ratio !== null && times.ratio !== undefined
+      ? times.ratio
+      : (Number.isFinite(times.time) && Number.isFinite(times.duration) && times.duration > 0
+          ? times.time / times.duration
+          : null);
+    const now = Date.now();
+    try {
+      window.__hdrezkaAutoState = {
+        casting: true,
+        key,
+        phase: autoAdvanceState.phase,
+        remaining,
+        duration: times.duration,
+        time: times.time,
+        ratio,
+        waitStartUntil: autoAdvanceState.waitStartUntil,
+        waitPlayUntil: autoAdvanceState.waitPlayUntil,
+        ensureAttempts: autoAdvanceState.ensureAttempts
       };
-      const evaluate = () => {
-        let casting = false;
-        try {
-          if (window.cast && cast.framework && cast.framework.CastContext) {
-            const ctx = cast.framework.CastContext.getInstance();
-            const s = ctx && ctx.getSessionState ? ctx.getSessionState() : null;
-            if (s && cast.framework.SessionState) {
-              if (s === STARTED() || s === RESUMED() || s === STARTING()) {
-                casting = true;
-              }
-            }
-          }
-        } catch (error) {
-          // ignore
-        }
-        if (!casting) {
+    } catch (error) {
+      // ignore
+    }
+
+    const nearEnd =
+      (remaining !== null && remaining <= AUTO_CAST_PREP_OFFSET_SEC) ||
+      (ratio !== null && ratio >= AUTO_CAST_NEAR_END_RATIO);
+
+    if (autoAdvanceState.phase === 'idle') {
+      if (nearEnd) {
+        autoAdvanceState.phase = 'waiting_start';
+        autoAdvanceState.lastTime = Number.isFinite(times.time) ? times.time : 0;
+        autoAdvanceState.lastRatio = Number.isFinite(ratio) ? ratio : 0;
+        autoAdvanceState.waitStartUntil = now + AUTO_CAST_SEEK_DELAY_MS + 800;
+        const api = getPlayerApi();
+        if (api) {
           try {
-            const btn = document.querySelector('#pjs_cast_button_cdnplayer');
-            if (btn && btn.querySelector('.cast_caf_state_c')) {
-              casting = true;
-            }
+            api('seek', 1);
+            api('play');
           } catch (error) {
             // ignore
           }
         }
-        emit(casting);
-      };
-      const attach = () => {
-        try {
-          if (!window.cast || !cast.framework || !cast.framework.CastContext || !cast.framework.CastContextEventType) {
-            return false;
-          }
-          const ctx = cast.framework.CastContext.getInstance();
-          const types = cast.framework.CastContextEventType;
-          ctx.addEventListener(types.SESSION_STATE_CHANGED, evaluate);
-          ctx.addEventListener(types.CAST_STATE_CHANGED, evaluate);
-          ctx.addEventListener(types.SESSION_ENDED, evaluate);
-          evaluate();
-          return true;
-        } catch (error) {
-          return false;
-        }
-      };
-      if (!attach()) {
-        const orig = window.__onGCastApiAvailable;
-        window.__onGCastApiAvailable = function(avail) {
-          try { if (typeof orig === 'function') { orig(avail); } } catch (error) {}
-          if (avail) {
-            setTimeout(attach, 50);
-          }
-        };
+        console.log(AUTO_LOG_PREFIX, 'prep->waiting_start', {
+          key,
+          time: times.time,
+          duration: times.duration,
+          remaining
+        });
       }
-      document.addEventListener('DOMContentLoaded', evaluate);
-    })();`;
-    (document.documentElement || document.head || document.body).appendChild(script);
+      return;
+    }
 
-    document.addEventListener('hdrezka-cast-bridge', (event) => {
-      if (!event || !event.detail) return;
-      const nextState = Boolean(event.detail.casting);
-      if (castBridgeState !== nextState) {
-        castBridgeState = nextState;
-        updateCastButtonState();
+    if (autoAdvanceState.phase === 'waiting_start') {
+      const timeProgressed =
+        Number.isFinite(times.time) && Number.isFinite(autoAdvanceState.lastTime)
+          ? times.time > autoAdvanceState.lastTime + 0.25
+          : false;
+      const ratioProgressed =
+        Number.isFinite(ratio) && Number.isFinite(autoAdvanceState.lastRatio)
+          ? ratio > autoAdvanceState.lastRatio + 0.001
+          : false;
+      const progressed = timeProgressed || ratioProgressed;
+      if (progressed || now >= autoAdvanceState.waitStartUntil) {
+        autoAdvanceState.phase = 'ensure_play';
+        autoAdvanceState.waitPlayUntil = now + AUTO_CAST_PLAY_DELAY_MS;
+        autoAdvanceState.ensureAttempts = 0;
+        navigateToNextEpisode();
+        console.log(AUTO_LOG_PREFIX, 'waiting_start->ensure_play', {
+          progressed,
+          timeProgressed,
+          ratioProgressed,
+          key,
+          time: times.time,
+          duration: times.duration,
+          remaining,
+          ratio
+        });
+        return;
       }
-    });
+      autoAdvanceState.lastTime = Number.isFinite(times.time) ? times.time : autoAdvanceState.lastTime;
+      autoAdvanceState.lastRatio = Number.isFinite(ratio) ? ratio : autoAdvanceState.lastRatio;
+      return;
+    }
+
+    if (autoAdvanceState.phase === 'ensure_play') {
+      const timeProgressed =
+        Number.isFinite(times.time) && Number.isFinite(autoAdvanceState.lastTime)
+          ? times.time > autoAdvanceState.lastTime + 0.25
+          : false;
+      const ratioProgressed =
+        Number.isFinite(ratio) && Number.isFinite(autoAdvanceState.lastRatio)
+          ? ratio > autoAdvanceState.lastRatio + 0.001
+          : false;
+      const progressed = timeProgressed || ratioProgressed;
+      if (progressed) {
+        console.log(AUTO_LOG_PREFIX, 'ensure_play complete', {
+          key,
+          time: times.time,
+          duration: times.duration,
+          ratio
+        });
+        resetAutoAdvanceState();
+        return;
+      }
+      if (now >= autoAdvanceState.waitPlayUntil && autoAdvanceState.ensureAttempts < AUTO_CAST_MAX_RETRIES) {
+        autoAdvanceState.ensureAttempts += 1;
+        autoAdvanceState.waitPlayUntil = now + AUTO_CAST_PLAY_RETRY_MS;
+        attemptCastReload();
+        const api = getPlayerApi();
+        if (api) {
+          try {
+            api('play');
+          } catch (error) {
+            // ignore
+          }
+        }
+        console.log(AUTO_LOG_PREFIX, 'ensure_play retry', {
+          attempt: autoAdvanceState.ensureAttempts,
+          key,
+          time: times.time,
+          duration: times.duration,
+          remaining,
+          ratio
+        });
+      }
+      if (autoAdvanceState.ensureAttempts >= AUTO_CAST_MAX_RETRIES && now >= autoAdvanceState.waitPlayUntil) {
+        console.log(AUTO_LOG_PREFIX, 'ensure_play giving up', { key, time: times.time, duration: times.duration, ratio });
+        resetAutoAdvanceState();
+      }
+    }
   }
 
+  function syncCastIntegration() {
+    ensureCastInitialized();
+    attachCastSessionListener();
+    pollCastState();
+  }
+
+  function pollCastState() {
+    const nextState = computeCastState();
+    if (castBridgeState !== nextState) {
+      castBridgeState = nextState;
+      updateCastButtonState();
+    }
+  }
+
+  function computeCastState() {
+    let casting = false;
+    let ctxState = null;
+    let nativeInfo = null;
+    if (window.cast && cast.framework && cast.framework.CastContext) {
+      try {
+        const ctx = cast.framework.CastContext.getInstance();
+        ctxState = ctx && ctx.getSessionState ? ctx.getSessionState() : null;
+        if (ctxState && cast.framework.SessionState) {
+          if (
+            ctxState === cast.framework.SessionState.SESSION_STARTED ||
+            ctxState === cast.framework.SessionState.SESSION_RESUMED ||
+            ctxState === cast.framework.SessionState.SESSION_STARTING
+          ) {
+            casting = true;
+          }
+        }
+      } catch (error) {
+        console.log(AUTO_LOG_PREFIX, 'cast context read failed', error);
+      }
+    }
+    if (!casting) {
+      try {
+        const btn = findNativeCastButton();
+        if (btn) {
+          const connectedPath = btn.querySelector('.cast_caf_state_c');
+          const disconnectedPath = btn.querySelector('.cast_caf_state_d');
+          const display = getComputedStyle(btn).display;
+          nativeInfo = {
+            display,
+            connected: !!connectedPath,
+            disconnected: !!disconnectedPath,
+            fill: connectedPath ? getComputedStyle(connectedPath).fill : null
+          };
+          if (connectedPath && display !== 'none') {
+            casting = true;
+          }
+        }
+      } catch (error) {
+        console.log(AUTO_LOG_PREFIX, 'native cast read failed', error);
+      }
+    }
+    console.log(AUTO_LOG_PREFIX, 'cast state', { casting, ctxState, nativeInfo });
+    return casting;
+  }
   function createCastToggleButton() {
     castToggleButton = createEpisodeButton('cast-toggle-button', CAST_ICON_SVG, handleCastToggle);
     const tooltip = 'Start casting';
@@ -1162,7 +1399,6 @@
   }
 
   function init() {
-    initCastBridge();
     createPrevButton();
     createNextButton();
     createZoomButtons();
@@ -1170,6 +1406,8 @@
     updateEpisodeButtons();
     positionEpisodeButtons();
     setInterval(positionEpisodeButtons, LAYOUT_INTERVAL_MS);
+    setInterval(pollCastState, 800);
+    setInterval(maybeAutoAdvanceCast, 1000);
     window.addEventListener('resize', positionEpisodeButtons);
     document.addEventListener('fullscreenchange', positionEpisodeButtons);
   }
