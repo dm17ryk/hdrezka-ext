@@ -1,8 +1,37 @@
 // content.js
 
 (function() {
+  if (window.top !== window) {
+    window.addEventListener('message', (event) => {
+      if (event.source !== window.top && event.source !== window) return;
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'hdrezka_frame_media_request') {
+        let payload = null;
+        try {
+          const inst = window.pljssglobal && Array.isArray(window.pljssglobal) ? window.pljssglobal[0] : null;
+          if (inst) {
+            let apiPlaylist = null;
+            let apiFile = null;
+            try { apiPlaylist = inst.api ? inst.api('playlist') : null; } catch (error) {}
+            try { apiFile = inst.api ? inst.api('file') : null; } catch (error) {}
+            payload = {
+              media: inst.media || null,
+              playlist: inst.playlist || null,
+              apiPlaylist,
+              apiFile
+            };
+          }
+        } catch (error) {
+          payload = { error: String(error) };
+        }
+        window.postMessage({ type: 'hdrezka_frame_media_response', payload }, '*');
+      }
+    });
+    return;
+  }
+
   console.log('Content script reloaded');
-  //debugger;
 
   let nextButton;
   let prevButton;
@@ -58,9 +87,11 @@
   const CAST_MIN_WIDTH = 86;
   const CAST_RESUME_MAX_ATTEMPTS = 6;
   const CAST_RESUME_DELAY_MS = 600;
+  const CAST_RELOAD_WINDOW_MS = 10000;
   let castHelperInjected = false;
   let castHelperReady = false;
   let castReloadTimer = null;
+  const LOG_PREFIX = '[hdrezka][cast]';
   const CAST_ICON_SVG = `
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <g>
@@ -233,6 +264,11 @@
   function navigateToPreviousEpisode() {
     const prevEpisode = getPreviousEpisodeElement();
     if (prevEpisode) {
+      console.log(LOG_PREFIX, 'going prev', {
+        from: formatEpisodeLabel(getActiveEpisodeInfo()),
+        to: formatEpisodeLabel({ season: prevEpisode.getAttribute('data-season_id'), episode: prevEpisode.getAttribute('data-episode_id') }),
+        url: getCurrentMediaUrl()
+      });
       prevEpisode.click();
       setTimeout(updateEpisodeButtons, 2000);
       setTimeout(startEpisodePlayback, 2000);
@@ -243,6 +279,11 @@
   function navigateToNextEpisode() {
     const nextEpisode = getNextEpisodeElement();
     if (nextEpisode) {
+      console.log(LOG_PREFIX, 'going next', {
+        from: formatEpisodeLabel(getActiveEpisodeInfo()),
+        to: formatEpisodeLabel({ season: nextEpisode.getAttribute('data-season_id'), episode: nextEpisode.getAttribute('data-episode_id') }),
+        url: getCurrentMediaUrl()
+      });
       nextEpisode.click();
       setTimeout(updateEpisodeButtons, 2000);
       setTimeout(startEpisodePlayback, 2000);
@@ -445,12 +486,116 @@
     }
   }
 
-  function getPlayerApi() {
-    if (!window.pljssglobal || !Array.isArray(window.pljssglobal) || window.pljssglobal.length === 0) {
-      return null;
+  function findPlayerInstance() {
+    const seen = new Set();
+    const queue = [window];
+    while (queue.length) {
+      const win = queue.shift();
+      if (!win || seen.has(win)) continue;
+      seen.add(win);
+      try {
+        if (win.pljssglobal && Array.isArray(win.pljssglobal) && win.pljssglobal[0]) {
+          return win.pljssglobal[0];
+        }
+      } catch (error) {
+        // ignore cross-origin
+      }
+      try {
+        const frames = win.frames;
+        for (let i = 0; i < frames.length; i += 1) {
+          queue.push(frames[i]);
+        }
+      } catch (error) {
+        // ignore
+      }
     }
-    const instance = window.pljssglobal[0];
+    return null;
+  }
+
+  function getPlayerApi() {
+    const instance = findPlayerInstance();
     return instance && typeof instance.api === 'function' ? instance.api : null;
+  }
+
+  function getCurrentMediaUrl() {
+    const api = getPlayerApi();
+    const candidates = [];
+    const addCandidate = (url, source, ts) => {
+      if (url && typeof url === 'string') {
+        candidates.push({ url, source, ts: typeof ts === 'number' ? ts : Date.now() });
+      }
+    };
+    const pickBest = () => {
+      const httpCandidates = candidates.filter((c) => c.url.startsWith('http') && !c.url.startsWith('blob:'));
+      if (httpCandidates.length > 0) {
+        httpCandidates.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        return httpCandidates[0];
+      }
+      return candidates[0] || null;
+    };
+
+    if (api) {
+      try {
+        const file = api('file');
+        if (file) {
+          if (Array.isArray(file) && file.length > 0 && typeof file[0] === 'string') {
+            addCandidate(file[0], 'api:file[0]');
+          } else if (typeof file === 'string') {
+            addCandidate(file, 'api:file');
+          }
+        }
+      } catch (error) {
+        // ignore
+      }
+      try {
+        const playlist = api('playlist');
+        const pid = api('playlist_id');
+        if (playlist && Array.isArray(playlist)) {
+          if (pid && playlist[pid] && playlist[pid].file) {
+            addCandidate(playlist[pid].file, 'api:playlist[id]');
+          }
+          for (const entry of playlist) {
+            if (!entry) continue;
+            if (entry.file) addCandidate(entry.file, 'api:playlist:file');
+            if (entry.url) addCandidate(entry.url, 'api:playlist:url');
+            if (entry.src) addCandidate(entry.src, 'api:playlist:src');
+            if (entry.sources && Array.isArray(entry.sources)) {
+              for (const s of entry.sources) {
+                if (s && (s.file || s.url || typeof s === 'string')) {
+                  addCandidate(s.file || s.url || s, 'api:playlist:sources');
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // ignore
+      }
+    }
+
+    const video = getVideoElement();
+    if (video) {
+      if (video.currentSrc) addCandidate(video.currentSrc, 'video:currentSrc');
+      if (video.src) addCandidate(video.src, 'video:src');
+      const sourceChild = video.querySelector('source');
+      if (sourceChild && sourceChild.src) {
+        addCandidate(sourceChild.src, 'video:source');
+      }
+    }
+
+    try {
+      const perfEntries = performance.getEntriesByType('resource') || [];
+      perfEntries.forEach((entry) => {
+        if (entry && entry.name && typeof entry.name === 'string' && entry.name.includes('manifest.m3u8')) {
+          addCandidate(entry.name, 'perf:manifest', entry.startTime || Date.now());
+        }
+      });
+    } catch (error) {
+      // ignore
+    }
+
+    const best = pickBest();
+    return best ? { ...best, candidates } : { url: null, source: null, candidates };
   }
 
   function injectCastHelper() {
@@ -639,12 +784,56 @@
     injectCastHelper();
     if (castReloadTimer) {
       clearTimeout(castReloadTimer);
-    }
-    castReloadTimer = setTimeout(() => {
-      attemptCastReload(0, { seekToStart: true });
-      setTimeout(() => attemptCastReload(1, { seekToStart: true }), CAST_RESUME_DELAY_MS);
       castReloadTimer = null;
-    }, 800);
+    }
+    const startedAt = Date.now();
+    let attempt = 0;
+    const run = () => {
+      if (!isCastSessionActive()) {
+        castReloadTimer = null;
+        return;
+      }
+      const media = getCurrentMediaUrl();
+      console.log(LOG_PREFIX, 'reload attempt', {
+        attempt,
+        url: media ? media.url : null,
+        source: media ? media.source : null,
+        candidates: media ? media.candidates : null,
+        episode: formatEpisodeLabel(getActiveEpisodeInfo())
+      });
+      if (media && Array.isArray(media.candidates)) {
+        console.log(LOG_PREFIX, 'candidates detail', media.candidates);
+      }
+      // debug: dump player media/playlist
+      try {
+        const inst = findPlayerInstance();
+        console.log(LOG_PREFIX, 'player media', { inst });
+        if (inst) {
+          console.log(LOG_PREFIX, 'player media', {
+            media: inst.media,
+            playlist: inst.playlist,
+            apiPlaylist: getPlayerApi() ? getPlayerApi()('playlist') : null
+          });
+        } else {
+          console.log(LOG_PREFIX, 'player media', { inst: null });
+        }
+      } catch (error) {
+        console.log(LOG_PREFIX, 'player media read failed', error);
+      }
+      window.postMessage({ type: 'hdrezka_frame_media_request' }, '*');
+      postCastControl('dumpMedia', { reply: true });
+      postCastControl('stopCast');
+      postCastControl('loadCurrent', { url: media ? media.url : undefined, candidates: media ? media.candidates : undefined });
+      attemptCastReload(attempt, { seekToStart: true });
+      attempt += 1;
+      const elapsed = Date.now() - startedAt;
+      if (elapsed >= CAST_RELOAD_WINDOW_MS || attempt >= CAST_RESUME_MAX_ATTEMPTS) {
+        castReloadTimer = null;
+        return;
+      }
+      castReloadTimer = setTimeout(run, CAST_RESUME_DELAY_MS);
+    };
+    castReloadTimer = setTimeout(run, 800);
   }
 
   function handleCastingEpisodeChange(activeInfo) {
@@ -834,6 +1023,12 @@
     if (!data || typeof data !== 'object') return;
     if (data.type === 'hdrezka_seek_timeline') {
       seekViaTimeline(typeof data.ratio === 'number' ? data.ratio : 0);
+    }
+    if (data.type === 'hdrezka_cast_control_ack' && data.action === 'dumpMedia') {
+      console.log(LOG_PREFIX, 'dumpMedia ack', data.ok);
+    }
+    if (data.type === 'hdrezka_frame_media_response') {
+      console.log(LOG_PREFIX, 'frame media response', data.payload);
     }
   });
 

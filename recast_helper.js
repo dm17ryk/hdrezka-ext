@@ -9,6 +9,13 @@
   function recast() {
     const inst = getPlayerInstance();
     if (!inst) return false;
+    try {
+      if (inst.api) {
+        inst.api('castinit');
+      }
+    } catch (error) {
+      // ignore
+    }
     if (inst.chromecast && typeof inst.chromecast.Go === 'function') {
       try {
         inst.chromecast.Go();
@@ -42,6 +49,153 @@
     }
   }
 
+  function inferContentType(url) {
+    if (!url || typeof url !== 'string') return 'video/mp4';
+    if (url.includes('.m3u8')) return 'application/x-mpegURL';
+    if (url.includes('.mpd')) return 'application/dash+xml';
+    if (url.match(/\\.mp4($|\\?)/i)) return 'video/mp4';
+    return 'video/mp4';
+  }
+
+  function loadCurrentToCast(overrideUrl, candidates) {
+    if (!window.cast || !cast.framework || !chrome || !chrome.cast || !chrome.cast.media) {
+      console.log('[hdrezka][cast]', 'loadCurrent missing cast framework');
+      return false;
+    }
+    const ctx = cast.framework.CastContext.getInstance();
+    const session = ctx && ctx.getCurrentSession ? ctx.getCurrentSession() : null;
+    if (!session) {
+      console.log('[hdrezka][cast]', 'loadCurrent no session');
+      return false;
+    }
+    const inst = getPlayerInstance();
+    if (!inst || !inst.api) {
+      console.log('[hdrezka][cast]', 'loadCurrent no player api');
+      return false;
+    }
+    let file = null;
+    const localCandidates = [];
+    const addCandidate = (url, source) => {
+      if (url && typeof url === 'string') {
+        localCandidates.push({ url, source });
+      }
+    };
+    if (Array.isArray(candidates)) {
+      candidates.forEach((c) => addCandidate(c.url, c.source || 'cs:candidate'));
+    }
+    if (overrideUrl) {
+      addCandidate(overrideUrl, 'override');
+    } else {
+      try {
+        const apiFile = inst.api('file');
+        if (apiFile) addCandidate(apiFile, 'api:file');
+      } catch (error) {
+        // ignore
+      }
+    }
+    let url = null;
+    const pickFirstHttp = () =>
+      localCandidates.find((c) => c.url && c.url.startsWith('http') && !c.url.startsWith('blob:'));
+    const pickAny = () => localCandidates[0] || null;
+
+    if (inst && inst.media && inst.media.file) addCandidate(inst.media.file, 'media:file');
+    if (inst && inst.media && Array.isArray(inst.media.files)) {
+      for (const f of inst.media.files) {
+        addCandidate(f && f.file ? f.file : f, 'media:files');
+      }
+    }
+    if (inst && inst.playlist && Array.isArray(inst.playlist)) {
+      for (const entry of inst.playlist) {
+        if (!entry) continue;
+        addCandidate(entry.file, 'playlist:file');
+        addCandidate(entry.url, 'playlist:url');
+        addCandidate(entry.src, 'playlist:src');
+        if (entry.sources && Array.isArray(entry.sources)) {
+          entry.sources.forEach((s) => addCandidate(s && (s.file || s.url || s), 'playlist:sources'));
+        }
+      }
+    }
+
+    const httpCandidate = pickFirstHttp();
+    url = httpCandidate ? httpCandidate.url : null;
+    if (!url) {
+      const any = pickAny();
+      url = any ? any.url : null;
+    }
+
+    console.log('[hdrezka][cast]', 'loadCurrent candidates', localCandidates, 'chosen', url);
+
+    if (!url) {
+      console.log('[hdrezka][cast]', 'loadCurrent no url', { candidates: localCandidates });
+      return false;
+    }
+    const mediaInfo = new chrome.cast.media.MediaInfo(url, inferContentType(url));
+    mediaInfo.streamType = chrome.cast.media.StreamType.BUFFERED;
+    const request = new chrome.cast.media.LoadRequest(mediaInfo);
+    request.autoplay = true;
+    request.currentTime = 0;
+    try {
+      const result = session.loadMedia(request);
+      Promise.resolve(result)
+        .then(() => console.log('[hdrezka][cast]', 'loadCurrent sent', { url }))
+        .catch((error) => console.log('[hdrezka][cast]', 'loadCurrent load rejected', error));
+      return true;
+    } catch (error) {
+      console.log('[hdrezka][cast]', 'loadCurrent failed', error, { candidates: localCandidates });
+      return false;
+    }
+  }
+
+  function stopCast() {
+    const inst = getPlayerInstance();
+    let ok = false;
+    if (inst && inst.chromecast && typeof inst.chromecast.Stop === 'function') {
+      try {
+        inst.chromecast.Stop();
+        ok = true;
+      } catch (error) {
+        // ignore
+      }
+    }
+    if (!ok && window.cast && cast.framework) {
+      const ctx = cast.framework.CastContext.getInstance();
+      const session = ctx && ctx.getCurrentSession ? ctx.getCurrentSession() : null;
+      const media = session && session.getMediaSession ? session.getMediaSession() : null;
+      if (media && typeof media.stop === 'function') {
+        try {
+          media.stop();
+          ok = true;
+        } catch (error) {
+          // ignore
+        }
+      }
+    }
+    return ok;
+  }
+
+  function dumpMedia() {
+    const inst = getPlayerInstance();
+    if (!inst) return null;
+    let apiPlaylist = null;
+    try {
+      apiPlaylist = inst.api ? inst.api('playlist') : null;
+    } catch (error) {
+      // ignore
+    }
+    let apiFile = null;
+    try {
+      apiFile = inst.api ? inst.api('file') : null;
+    } catch (error) {
+      // ignore
+    }
+    return {
+      media: inst.media || null,
+      playlist: inst.playlist || null,
+      apiPlaylist,
+      apiFile
+    };
+  }
+
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     const data = event.data;
@@ -53,6 +207,12 @@
       ok = recast();
     } else if (data.action === 'seekPercent') {
       ok = seekPercent(data.percent);
+    } else if (data.action === 'loadCurrent') {
+      ok = loadCurrentToCast(data.url, data.candidates);
+    } else if (data.action === 'stopCast') {
+      ok = stopCast();
+    } else if (data.action === 'dumpMedia') {
+      ok = dumpMedia();
     }
     if (data.reply) {
       window.postMessage(

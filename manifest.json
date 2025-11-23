@@ -26,7 +26,8 @@
             ],
             "css": [
                 "next_button.css"
-            ]
+            ],
+            "all_frames": true
         }
     ],
     "web_accessible_resources": [
