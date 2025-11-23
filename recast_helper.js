@@ -75,16 +75,16 @@
     }
     let file = null;
     const localCandidates = [];
-    const addCandidate = (url, source) => {
+    const addCandidate = (url, source, ts) => {
       if (url && typeof url === 'string') {
-        localCandidates.push({ url, source });
+        localCandidates.push({ url, source, ts: typeof ts === 'number' ? ts : Date.now() });
       }
     };
     if (Array.isArray(candidates)) {
-      candidates.forEach((c) => addCandidate(c.url, c.source || 'cs:candidate'));
+      candidates.forEach((c) => addCandidate(c.url, c.source || 'cs:candidate', c.ts));
     }
     if (overrideUrl) {
-      addCandidate(overrideUrl, 'override');
+      addCandidate(overrideUrl, 'override', Date.now());
     } else {
       try {
         const apiFile = inst.api('file');
@@ -93,10 +93,18 @@
         // ignore
       }
     }
-    let url = null;
-    const pickFirstHttp = () =>
-      localCandidates.find((c) => c.url && c.url.startsWith('http') && !c.url.startsWith('blob:'));
-    const pickAny = () => localCandidates[0] || null;
+    const pickBest = () => {
+      if (overrideUrl && typeof overrideUrl === 'string' && overrideUrl.startsWith('http')) {
+        return { url: overrideUrl, source: 'override', ts: Date.now() };
+      }
+      const httpCandidates = localCandidates.filter((c) => c.url && c.url.startsWith('http') && !c.url.startsWith('blob:'));
+      if (httpCandidates.length > 0) {
+        httpCandidates.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        return httpCandidates[0];
+      }
+      const any = localCandidates[0] || null;
+      return any;
+    };
 
     if (inst && inst.media && inst.media.file) addCandidate(inst.media.file, 'media:file');
     if (inst && inst.media && Array.isArray(inst.media.files)) {
@@ -116,14 +124,10 @@
       }
     }
 
-    const httpCandidate = pickFirstHttp();
-    url = httpCandidate ? httpCandidate.url : null;
-    if (!url) {
-      const any = pickAny();
-      url = any ? any.url : null;
-    }
+    const chosen = pickBest();
+    const url = chosen ? chosen.url : null;
 
-    console.log('[hdrezka][cast]', 'loadCurrent candidates', localCandidates, 'chosen', url);
+    console.log('[hdrezka][cast]', 'loadCurrent candidates', localCandidates, 'chosen', url, chosen);
 
     if (!url) {
       console.log('[hdrezka][cast]', 'loadCurrent no url', { candidates: localCandidates });

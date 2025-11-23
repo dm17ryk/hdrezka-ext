@@ -525,11 +525,35 @@
         candidates.push({ url, source, ts: typeof ts === 'number' ? ts : Date.now() });
       }
     };
+    const extractEpisodeFromUrl = (url) => {
+      if (!url || typeof url !== 'string') return null;
+      try {
+        const parts = url.split('/');
+        for (let i = parts.length - 1; i >= 1; i -= 1) {
+          if (parts[i].includes('.mp4:hls:manifest')) {
+            const prev = parts[i - 1];
+            if (prev && /^\d+$/.test(prev)) {
+              return prev;
+            }
+          }
+        }
+      } catch (error) {
+        // ignore
+      }
+      return null;
+    };
+
     const pickBest = () => {
+      const active = getActiveEpisodeInfo();
+      const episodeId = active && active.episode ? String(active.episode) : null;
       const httpCandidates = candidates.filter((c) => c.url.startsWith('http') && !c.url.startsWith('blob:'));
-      if (httpCandidates.length > 0) {
-        httpCandidates.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-        return httpCandidates[0];
+      const withEpisode = episodeId
+        ? httpCandidates.filter((c) => extractEpisodeFromUrl(c.url) === episodeId)
+        : [];
+      const pool = withEpisode.length > 0 ? withEpisode : httpCandidates;
+      if (pool.length > 0) {
+        pool.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        return pool[0];
       }
       return candidates[0] || null;
     };
