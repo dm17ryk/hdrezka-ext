@@ -9,6 +9,7 @@
   let zoomOutButton;
   let zoomResetButton;
   let zoomInButton;
+  let rewindButton;
   const observedEpisodes = new WeakSet();
   const LAYOUT_INTERVAL_MS = 800;
   const BUTTON_MARGIN_PX = 12;
@@ -303,13 +304,14 @@
     zoomOutButton = createZoomButton('zoom-out-button', '▬', 'Zoom video out', () => adjustVideoZoom(-ZOOM_STEP));
     zoomResetButton = createZoomButton('zoom-reset-button', 'Z-Reset', 'Reset zoom', () => setVideoZoom(1));
     zoomInButton = createZoomButton('zoom-in-button', '✚', 'Zoom video in', () => adjustVideoZoom(ZOOM_STEP));
-    [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => mountEpisodeButton(button));
+    rewindButton = createZoomButton('rewind-button', '<<<', 'Seek to start', () => seekViaTimeline(0.001));
+    [zoomOutButton, zoomResetButton, zoomInButton, rewindButton].forEach((button) => mountEpisodeButton(button));
     updateZoomButtonsState();
     refreshZoomTooltips();
   }
 
   function getControlledButtons() {
-    return [prevButton, nextButton, zoomOutButton, zoomResetButton, zoomInButton, castToggleButton].filter(Boolean);
+    return [prevButton, nextButton, zoomOutButton, zoomResetButton, zoomInButton, rewindButton, castToggleButton].filter(Boolean);
   }
 
   function getVideoElement() {
@@ -681,6 +683,158 @@
     return { total, elapsed };
   }
 
+  function seekViaTimeline(ratio = 0) {
+    const clamped = Math.max(0, Math.min(1, ratio));
+    const api = getPlayerApi();
+    const instance = window.pljssglobal && window.pljssglobal[0];
+    const chromecast = instance && instance.chromecast ? instance.chromecast : null;
+    if (chromecast && isCastSessionActive()) {
+      try {
+        const duration = Number(api ? api('duration') : NaN);
+        const targetTime = Number.isFinite(duration) ? duration * clamped : null;
+        if (targetTime !== null) {
+          chromecast.Seek(targetTime);
+          chromecast.Play();
+          console.log(AUTO_LOG_PREFIX, 'seekViaTimeline via chromecast', { ratio: clamped, targetTime, duration });
+          return true;
+        }
+      } catch (error) {
+        console.log(AUTO_LOG_PREFIX, 'seekViaTimeline chromecast failed', error);
+      }
+    }
+    if (api) {
+      try {
+        const percent = Math.round(clamped * 100);
+        api('seek', `${ percent }%`);
+        api('play');
+        console.log(AUTO_LOG_PREFIX, 'seekViaTimeline via api %', { ratio: clamped, percent });
+        return true;
+      } catch (error) {
+        console.log(AUTO_LOG_PREFIX, 'seekViaTimeline api percent failed', error);
+      }
+    }
+    if (api) {
+      try {
+        const duration = Number(api('duration'));
+        if (Number.isFinite(duration) && duration > 0) {
+          const targetTime = duration * clamped;
+          api('seek', targetTime);
+          api('play');
+          console.log(AUTO_LOG_PREFIX, 'seekViaTimeline via api', { ratio: clamped, duration, targetTime });
+          return true;
+        }
+      } catch (error) {
+        console.log(AUTO_LOG_PREFIX, 'seekViaTimeline api failed', error);
+      }
+    }
+
+    const timeline = document.getElementById('cdnplayer_control_timeline');
+    if (!timeline) {
+      console.log(AUTO_LOG_PREFIX, 'timeline not found for seek');
+      return false;
+    }
+    const targets = [timeline].concat(
+      Array.from(timeline.querySelectorAll('*')).filter((el) => {
+        const style = window.getComputedStyle(el);
+        return style.pointerEvents !== 'none';
+      })
+    );
+    const dispatch = (type, Ctor = MouseEvent, init = {}) => {
+      const evt = new Ctor(type, {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: init.clientX,
+        clientY: init.clientY,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        ...init
+      });
+      init.target.dispatchEvent(evt);
+    };
+    targets.forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      const x = rect.left + clamped * rect.width;
+      const y = rect.top + rect.height / 2;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      ['pointermove', 'pointerdown', 'pointerup', 'mousemove', 'mousedown', 'mouseup', 'click'].forEach((type) => {
+        const ctor = type.startsWith('pointer') ? PointerEvent : MouseEvent;
+        dispatch(type, ctor, { clientX: x, clientY: y, target: el });
+      });
+    });
+    console.log(AUTO_LOG_PREFIX, 'seekViaTimeline', { ratio: clamped, targets: targets.length });
+    return true;
+  }
+
+  // Bridge for console debugging from the page context.
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    const data = event.data;
+    if (!data || typeof data !== 'object') return;
+    if (data.type === 'hdrezka_seek_timeline') {
+      seekViaTimeline(typeof data.ratio === 'number' ? data.ratio : 0);
+    }
+  });
+
+  function injectPageSeekHelper() {
+    if (document.getElementById('hdrezka-seek-helper')) return;
+    const code = `
+      (function() {
+        if (window.hdrezkaForceSeek) return;
+        function playApi(percent) {
+          const inst = window.pljssglobal && window.pljssglobal[0];
+          if (!inst || !inst.api) return false;
+          try {
+            inst.api('seek', percent + '%');
+            inst.api('play');
+            return true;
+          } catch (e) {
+            return false;
+          }
+        }
+        function seekTimeline(ratio) {
+          const timeline = document.getElementById('cdnplayer_control_timeline');
+          if (!timeline) return false;
+          const bars = Array.from(timeline.querySelectorAll('pjsdiv')).find(el => el.children && el.children.length >= 3) || timeline;
+          const rect = bars.getBoundingClientRect();
+          const clamped = Math.max(0, Math.min(1, typeof ratio === 'number' ? ratio : 0));
+          const x = rect.left + clamped * rect.width;
+          const y = rect.top + rect.height / 2;
+          ['mousemove','mousedown','mouseup','click'].forEach(type => {
+            const evt = new MouseEvent(type, { bubbles:true, cancelable:true, view:window, clientX:x, clientY:y, button:0, buttons:1 });
+            bars.dispatchEvent(evt);
+          });
+          return true;
+        }
+        window.hdrezkaForceSeek = function(ratio) {
+          const clamped = Math.max(0, Math.min(1, typeof ratio === 'number' ? ratio : 0));
+          const percent = Math.round(clamped * 100);
+          if (playApi(percent)) {
+            console.log('[hdrezka][seek-helper] via api %', percent);
+            return true;
+          }
+          const res = seekTimeline(clamped);
+          console.log('[hdrezka][seek-helper] via timeline', { ratio: clamped, res });
+          return res;
+        };
+        window.addEventListener('message', (event) => {
+          if (event.source !== window) return;
+          const data = event.data;
+          if (!data || typeof data !== 'object') return;
+          if (data.type === 'hdrezka_seek_timeline_force') {
+            window.hdrezkaForceSeek(typeof data.ratio === 'number' ? data.ratio : 0);
+          }
+        });
+      })();
+    `;
+    const blob = new Blob([code], { type: 'text/javascript' });
+    const script = document.createElement('script');
+    script.id = 'hdrezka-seek-helper';
+    script.src = URL.createObjectURL(blob);
+    (document.documentElement || document.head || document.body).appendChild(script);
+  }
+
   function resetAutoAdvanceState() {
     autoAdvanceState.phase = 'idle';
     autoAdvanceState.key = null;
@@ -782,20 +936,26 @@
         autoAdvanceState.lastTime = Number.isFinite(times.time) ? times.time : 0;
         autoAdvanceState.lastRatio = Number.isFinite(ratio) ? ratio : 0;
         autoAdvanceState.waitStartUntil = now + AUTO_CAST_SEEK_DELAY_MS + 800;
-        const api = getPlayerApi();
-        if (api) {
-          try {
-            api('seek', 1);
-            api('play');
-          } catch (error) {
-            // ignore
+        const usedTimeline = seekViaTimeline(0.001);
+        if (!usedTimeline) {
+          const api = getPlayerApi();
+          if (api) {
+            try {
+              api('seek', 1);
+              api('play');
+              console.log(AUTO_LOG_PREFIX, 'fallback api seek', { key });
+            } catch (error) {
+              // ignore
+            }
           }
         }
         console.log(AUTO_LOG_PREFIX, 'prep->waiting_start', {
           key,
           time: times.time,
           duration: times.duration,
-          remaining
+          remaining,
+          ratio,
+          usedTimeline
         });
       }
       return;
@@ -815,6 +975,7 @@
         autoAdvanceState.phase = 'ensure_play';
         autoAdvanceState.waitPlayUntil = now + AUTO_CAST_PLAY_DELAY_MS;
         autoAdvanceState.ensureAttempts = 0;
+        const beforeNextTimeline = seekViaTimeline(0.001);
         navigateToNextEpisode();
         console.log(AUTO_LOG_PREFIX, 'waiting_start->ensure_play', {
           progressed,
@@ -824,7 +985,8 @@
           time: times.time,
           duration: times.duration,
           remaining,
-          ratio
+          ratio,
+          beforeNextTimeline
         });
         return;
       }
@@ -1399,6 +1561,7 @@
   }
 
   function init() {
+    injectPageSeekHelper();
     createPrevButton();
     createNextButton();
     createZoomButtons();
