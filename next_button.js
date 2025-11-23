@@ -58,6 +58,8 @@
   const CAST_MIN_WIDTH = 86;
   const CAST_RESUME_MAX_ATTEMPTS = 6;
   const CAST_RESUME_DELAY_MS = 600;
+  let castHelperInjected = false;
+  let castHelperReady = false;
   const CAST_ICON_SVG = `
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <g>
@@ -448,6 +450,44 @@
     return instance && typeof instance.api === 'function' ? instance.api : null;
   }
 
+  function injectCastHelper() {
+    if (castHelperInjected) return;
+    if (!chrome || !chrome.runtime || typeof chrome.runtime.getURL !== 'function') return;
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('recast_helper.js');
+    script.async = false;
+    script.onload = () => {
+      castHelperReady = true;
+    };
+    script.onerror = () => {
+      castHelperReady = false;
+    };
+    const target =
+      document.documentElement ||
+      document.head ||
+      document.body;
+    if (!target) return;
+    castHelperInjected = true;
+    target.appendChild(script);
+  }
+
+  function postCastControl(action, payload = {}) {
+    if (!action) return false;
+    try {
+      window.postMessage(
+        {
+          type: 'hdrezka_cast_control',
+          action,
+          ...payload
+        },
+        '*'
+      );
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
   function ensureCastInitialized(force = false) {
     const api = getPlayerApi();
     if (!api) return false;
@@ -555,10 +595,17 @@
 
   function attemptCastReload(attempt = 0) {
     if (!isCastSessionActive()) return;
+    injectCastHelper();
     ensureCastInitialized(true);
     const playerInstance = (window.pljssglobal && window.pljssglobal[0]) || null;
     const api = getPlayerApi();
     let triggered = false;
+
+    const bridgePosted = postCastControl('recast');
+    if (castHelperReady && bridgePosted) {
+      triggered = true;
+    }
+
     if (playerInstance && playerInstance.chromecast && typeof playerInstance.chromecast.Go === 'function') {
       try {
         playerInstance.chromecast.Go();
@@ -1508,6 +1555,7 @@
   }
 
   function init() {
+    injectCastHelper();
     createPrevButton();
     createNextButton();
     createZoomButtons();

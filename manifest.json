@@ -28,5 +28,28 @@
                 "next_button.css"
             ]
         }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "recast_helper.js"
+            ],
+            "matches": [
+                "*://hdrezka.website/*",
+                "*://hdrezka.ag/*",
+                "*://rezka.ag/*",
+                "*://rezka-ua.tv/*",
+                "*://hdrezka.co/*",
+                "*://hdrezka.name/*",
+                "*://hdrezka.ink/*",
+                "*://*.hdrezka.website/*",
+                "*://*.hdrezka.ag/*",
+                "*://*.rezka.ag/*",
+                "*://*.rezka-ua.tv/*",
+                "*://*.hdrezka.co/*",
+                "*://*.hdrezka.name/*",
+                "*://*.hdrezka.ink/*"
+            ]
+        }
     ]
 }
