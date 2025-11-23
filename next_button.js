@@ -92,6 +92,8 @@
   let castHelperReady = false;
   let castReloadTimer = null;
   const LOG_PREFIX = '[hdrezka][cast]';
+  const episodeMediaCache = {};
+  let lastEpisodeNavTs = 0;
   const CAST_ICON_SVG = `
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <g>
@@ -264,11 +266,14 @@
   function navigateToPreviousEpisode() {
     const prevEpisode = getPreviousEpisodeElement();
     if (prevEpisode) {
+      const targetKey = `${ prevEpisode.getAttribute('data-season_id') || 's' }-${ prevEpisode.getAttribute('data-episode_id') }`;
       console.log(LOG_PREFIX, 'going prev', {
         from: formatEpisodeLabel(getActiveEpisodeInfo()),
         to: formatEpisodeLabel({ season: prevEpisode.getAttribute('data-season_id'), episode: prevEpisode.getAttribute('data-episode_id') }),
-        url: getCurrentMediaUrl()
+        url: getCurrentMediaUrl(),
+        cached: episodeMediaCache[targetKey] || null
       });
+      lastEpisodeNavTs = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
       prevEpisode.click();
       setTimeout(updateEpisodeButtons, 2000);
       setTimeout(startEpisodePlayback, 2000);
@@ -279,11 +284,14 @@
   function navigateToNextEpisode() {
     const nextEpisode = getNextEpisodeElement();
     if (nextEpisode) {
+      const targetKey = `${ nextEpisode.getAttribute('data-season_id') || 's' }-${ nextEpisode.getAttribute('data-episode_id') }`;
       console.log(LOG_PREFIX, 'going next', {
         from: formatEpisodeLabel(getActiveEpisodeInfo()),
         to: formatEpisodeLabel({ season: nextEpisode.getAttribute('data-season_id'), episode: nextEpisode.getAttribute('data-episode_id') }),
-        url: getCurrentMediaUrl()
+        url: getCurrentMediaUrl(),
+        cached: episodeMediaCache[targetKey] || null
       });
+      lastEpisodeNavTs = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
       nextEpisode.click();
       setTimeout(updateEpisodeButtons, 2000);
       setTimeout(startEpisodePlayback, 2000);
@@ -522,18 +530,27 @@
     const candidates = [];
     const addCandidate = (url, source, ts) => {
       if (url && typeof url === 'string') {
-        candidates.push({ url, source, ts: typeof ts === 'number' ? ts : Date.now() });
+        const nowTs = typeof ts === 'number'
+          ? ts
+          : (typeof performance !== 'undefined' && typeof performance.now === 'function'
+              ? performance.now()
+              : Date.now());
+        candidates.push({ url, source, ts: nowTs });
       }
     };
-    const extractEpisodeFromUrl = (url) => {
+    const extractSeasonEpisodeFromUrl = (url) => {
       if (!url || typeof url !== 'string') return null;
       try {
         const parts = url.split('/');
         for (let i = parts.length - 1; i >= 1; i -= 1) {
           if (parts[i].includes('.mp4:hls:manifest')) {
             const prev = parts[i - 1];
+            const prevSeason = parts[i - 2];
             if (prev && /^\d+$/.test(prev)) {
-              return prev;
+              return {
+                season: prevSeason && /^\d+$/.test(prevSeason) ? prevSeason : null,
+                episode: prev
+              };
             }
           }
         }
@@ -545,13 +562,25 @@
 
     const pickBest = () => {
       const active = getActiveEpisodeInfo();
-      const episodeId = active && active.episode ? String(active.episode) : null;
+      const activeEpisode = active && active.episode ? String(active.episode) : null;
+      const activeSeason = active && active.season ? String(active.season) : null;
+      const minTs = lastEpisodeNavTs || 0;
       const httpCandidates = candidates.filter((c) => c.url.startsWith('http') && !c.url.startsWith('blob:'));
-      const withEpisode = episodeId
-        ? httpCandidates.filter((c) => extractEpisodeFromUrl(c.url) === episodeId)
+      const withEpisode = activeEpisode
+        ? httpCandidates.filter((c) => {
+            const info = extractSeasonEpisodeFromUrl(c.url);
+            if (!info || !info.episode) return false;
+            if (info.episode !== activeEpisode) return false;
+            if (activeSeason && info.season && info.season !== activeSeason) return false;
+            return true;
+          })
         : [];
-      const pool = withEpisode.length > 0 ? withEpisode : httpCandidates;
+      let pool = withEpisode.length > 0 ? withEpisode : httpCandidates;
       if (pool.length > 0) {
+        const filtered = pool.filter((c) => !minTs || !c.ts || c.ts >= minTs - 500);
+        if (filtered.length > 0) {
+          pool = filtered;
+        }
         pool.sort((a, b) => (b.ts || 0) - (a.ts || 0));
         return pool[0];
       }
@@ -619,6 +648,33 @@
     }
 
     const best = pickBest();
+    const updateCache = () => {
+      candidates.forEach((c) => {
+        const info = extractSeasonEpisodeFromUrl(c.url);
+        if (!info || !info.episode) return;
+        const key = `${ info.season || 's' }-${ info.episode }`;
+        const prev = episodeMediaCache[key];
+        if (!prev || (c.ts || 0) > (prev.ts || 0)) {
+          episodeMediaCache[key] = { ...c };
+        }
+      });
+      if (best) {
+        const active = getActiveEpisodeInfo();
+        if (active && active.episode) {
+          const key = `${ active.season || 's' }-${ active.episode }`;
+          const prev = episodeMediaCache[key];
+          if (!prev || (best.ts || 0) >= (prev.ts || 0)) {
+            episodeMediaCache[key] = { ...best };
+          }
+        }
+      }
+      try {
+        window.__hdrezkaMediaCache = episodeMediaCache;
+      } catch (error) {
+        // ignore
+      }
+    };
+    updateCache();
     return best ? { ...best, candidates } : { url: null, source: null, candidates };
   }
 
