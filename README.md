@@ -6,8 +6,6 @@
 >
 > Расширение Chrome, которое делает HDRezka удобным для просмотра в полноэкранном режиме, добавляя плавающие элементы управления эпизодами, помощь для Chromecast и память масштабирования для каждого сезона.
 
-<img width="930" height="1105" alt="next-button-look-new-21" src="https://github.com/user-attachments/assets/aae7ded0-7e2e-4401-aa0a-9ab35e40b994" />
-
 ## Overview
 
 `manifest.json` defines a Manifest V3 content script that injects `next_button.js`/`next_button.css` on every `hdrezka`/`rezka` domain. No background/service worker code is required—the entire feature set lives in the injected script. The script augments the site player with richer controls and stores user preferences locally (via cookies) so every show remembers its preferred zoom level.
@@ -24,6 +22,24 @@
 - **Video zoom controls** – zoom in/out/reset buttons (±0.04 steps, clamped between 0.5x–2x) apply CSS transforms on the `<video>` element.
 - **Per-show zoom memory** – zoom levels persist in cookies using a `hdrezka_zoom_<slug>_s<season>` key, so each show-season combo keeps its own preference.
 
+## Preview
+<img width="850" height="615" alt="next-button-look-new-30" src="https://github.com/user-attachments/assets/61b4a54f-16ce-46dc-84ca-6cf73f462781" />
+<img width="850" height="615" alt="next-button-look-new-31" src="https://github.com/user-attachments/assets/fe10bd6a-cd19-416e-afb2-36e081fd55da" />
+<img width="850" height="610" alt="next-button-look-new-32" src="https://github.com/user-attachments/assets/57e00611-cade-439a-8383-75e700bf68ae" />
+<img width="853" height="612" alt="next-button-look-new-33" src="https://github.com/user-attachments/assets/e89ea043-aa22-4826-99cd-aa1fed7dc64c" />
+<img width="851" height="613" alt="next-button-look-new-34" src="https://github.com/user-attachments/assets/c0ca078c-8c76-49ea-a5bd-558dfe6d2552" />
+<img width="851" height="613" alt="next-button-look-new-35" src="https://github.com/user-attachments/assets/9558e61f-e614-48aa-9d57-fbe7cafc5751" />
+
+## Preview Custing
+<img width="846" height="613" alt="next-button-look-new-36" src="https://github.com/user-attachments/assets/1a76b432-b1fa-475b-a73b-8b46b5e9f6c9" />
+<img width="851" height="613" alt="next-button-look-new-37" src="https://github.com/user-attachments/assets/ccb5f8af-a33f-4cc8-858a-34a16fb2e74f" />
+
+## Full Screen Preview (Zoom ratio 1 -> not zoomed)
+<img width="5118" height="1438" alt="next-button-look-new-38" src="https://github.com/user-attachments/assets/a9c54d88-36ac-4271-8557-4508eed2c971" />
+
+## Full Screen Preview (Zoom ratio 2 -> zoomed twice)
+<img width="5118" height="1438" alt="next-button-look-new-39" src="https://github.com/user-attachments/assets/c43b743a-c43c-450d-b558-0d29f410b3b9" />
+
 ## Supported domains
 
 The content script is injected on each of the following origins (including subdomains):
@@ -31,10 +47,6 @@ The content script is injected on each of the following origins (including subdo
 `hdrezka.website`, `hdrezka.ag`, `rezka.ag`, `rezka-ua.tv`, `hdrezka.co`, `hdrezka.name`, `hdrezka.ink`
 
 ## Visual tour
-
-<img width="926" height="1005" alt="next-button-look-new-22" src="https://github.com/user-attachments/assets/0a6b3002-3988-4177-a3e1-c34d530f12e6" />
-
-<img width="922" height="1107" alt="next-button-look-new-23" src="https://github.com/user-attachments/assets/b53562d3-526a-404f-910f-023b850427a0" />
 
 ## Installation (Chrome/Chromium)
 
