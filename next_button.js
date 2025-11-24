@@ -94,6 +94,7 @@
   const LOG_PREFIX = '[hdrezka][cast]';
   const episodeMediaCache = {};
   let lastEpisodeNavTs = 0;
+  let pendingEpisodeKey = null;
   const CAST_ICON_SVG = `
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <g>
@@ -273,6 +274,7 @@
         url: getCurrentMediaUrl(),
         cached: episodeMediaCache[targetKey] || null
       });
+      pendingEpisodeKey = targetKey;
       lastEpisodeNavTs = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
       prevEpisode.click();
       setTimeout(updateEpisodeButtons, 2000);
@@ -291,6 +293,7 @@
         url: getCurrentMediaUrl(),
         cached: episodeMediaCache[targetKey] || null
       });
+      pendingEpisodeKey = targetKey;
       lastEpisodeNavTs = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
       nextEpisode.click();
       setTimeout(updateEpisodeButtons, 2000);
@@ -564,6 +567,11 @@
       const active = getActiveEpisodeInfo();
       const activeEpisode = active && active.episode ? String(active.episode) : null;
       const activeSeason = active && active.season ? String(active.season) : null;
+      const activeKey = activeEpisode ? `${ activeSeason || 's' }-${ activeEpisode }` : null;
+      const targetKey = activeKey || pendingEpisodeKey;
+      if (targetKey && episodeMediaCache[targetKey] && episodeMediaCache[targetKey].url) {
+        return episodeMediaCache[targetKey];
+      }
       const minTs = lastEpisodeNavTs || 0;
       const httpCandidates = candidates.filter((c) => c.url.startsWith('http') && !c.url.startsWith('blob:'));
       const withEpisode = activeEpisode
@@ -918,6 +926,9 @@
 
   function handleCastingEpisodeChange(activeInfo) {
     const key = activeInfo && activeInfo.season && activeInfo.episode ? `${ activeInfo.season }-${ activeInfo.episode }` : null;
+    if (key) {
+      pendingEpisodeKey = key;
+    }
     if (key && key !== lastEpisodeKey) {
       lastEpisodeKey = key;
       resetAutoAdvanceState();
@@ -1103,6 +1114,28 @@
     if (!data || typeof data !== 'object') return;
     if (data.type === 'hdrezka_seek_timeline') {
       seekViaTimeline(typeof data.ratio === 'number' ? data.ratio : 0);
+    } else if (data.type === 'hdrezka_cdn_stream') {
+      const season = data.season || null;
+      const episode = data.episode || null;
+      const key = season && episode ? `${ season }-${ episode }` : null;
+      const urls = Array.isArray(data.urls) ? data.urls : [];
+      const chosenUrl = data.url || urls[0] || null;
+      if (key && chosenUrl) {
+        const ts = typeof data.ts === 'number' ? data.ts : Date.now();
+        pendingEpisodeKey = key;
+        episodeMediaCache[key] = {
+          url: chosenUrl,
+          source: 'cdn:init',
+          ts,
+          candidates: urls.map((u) => ({ url: u, source: 'cdn:init', ts }))
+        };
+        try {
+          window.__hdrezkaMediaCache = episodeMediaCache;
+        } catch (error) {
+          // ignore
+        }
+        console.log(LOG_PREFIX, 'cdn stream update', { key, url: chosenUrl, urls, ts });
+      }
     }
     if (data.type === 'hdrezka_cast_control_ack' && data.action === 'dumpMedia') {
       console.log(LOG_PREFIX, 'dumpMedia ack', data.ok);

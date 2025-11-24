@@ -1,4 +1,7 @@
 cd "C:\Program Files\Google\Chrome\Application"
-.\chrome.exe --remote-debugging-port=9222 --no-first-run --user-data-dir="C:\tmp\chrome-devtools"
+.\chrome.exe --remote-debugging-port=9222 --remote-allow-origins=* --no-first-run --user-data-dir="C:\tmp\chrome-devtools"
 ssh ubuntu_wsl_tun -N
 netstat -ano | findstr :9222
+
+
+so as I understand need to andestand video names logic. Or maybe analize some amount of pages and find how to get video file name from array of seasons and episodes. Please use remote debugging and check pages: https://rezka.ag/cartoons/comedy/101-tom-i-dzherri-1940.html, https://rezka.ag/series/fantasy/83854-lisi-svahi-vancyuan-2025.html, https://rezka.ag/series/fantasy/11428-lyucifer-2016.html. we already know how to cklick next and previous episodes. now need to get video file name of next and previous episode. chrome started with command line: ".\chrome.exe --remote-debugging-port=9222 --remote-allow-origins=* --no-first-run --user-data-dir='C:\tmp\chrome-devtools'" so you have access to chrome devtools via port 9222

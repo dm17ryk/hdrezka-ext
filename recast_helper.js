@@ -200,6 +200,59 @@
     };
   }
 
+  function emitStreamInfo(payload) {
+    if (!payload) return;
+    try {
+      window.postMessage({ type: 'hdrezka_cdn_stream', ...payload }, '*');
+    } catch (error) {
+      // ignore
+    }
+  }
+
+  function parseStreamUrls(streams) {
+    if (!streams) return [];
+    const str = Array.isArray(streams) ? streams.join(' ') : String(streams);
+    const matches = str.match(/https?:\/\/[^\s'"]+?\.m3u8/gi) || [];
+    const uniq = [];
+    matches.forEach((url) => {
+      if (uniq.indexOf(url) === -1) uniq.push(url);
+    });
+    return uniq;
+  }
+
+  function patchCdnInit() {
+    const tv = window.sof && window.sof.tv;
+    if (!tv || typeof tv.initCDNSeriesEvents !== 'function') return false;
+    if (tv.initCDNSeriesEvents.__hdrezkaPatched) return true;
+    const original = tv.initCDNSeriesEvents;
+    const wrapped = function cdnInitWrapper(...args) {
+      try {
+        const params = args[8] && typeof args[8] === 'object' ? args[8] : {};
+        const urls = parseStreamUrls(params.streams || params.url || args[8]);
+        emitStreamInfo({
+          season: args[2],
+          episode: args[3],
+          urls,
+          url: urls[0] || null,
+          ts: Date.now(),
+          rawStreams: params.streams || null
+        });
+      } catch (error) {
+        // ignore
+      }
+      return original.apply(this, args);
+    };
+    wrapped.__hdrezkaPatched = true;
+    tv.initCDNSeriesEvents = wrapped;
+    return true;
+  }
+
+  (function ensureCdnPatch() {
+    if (!patchCdnInit()) {
+      setTimeout(ensureCdnPatch, 500);
+    }
+  })();
+
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     const data = event.data;
