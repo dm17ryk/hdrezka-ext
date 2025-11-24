@@ -279,7 +279,7 @@
       prevEpisode.click();
       setTimeout(updateEpisodeButtons, 2000);
       setTimeout(startEpisodePlayback, 2000);
-      scheduleCastReload();
+      setTimeout(scheduleCastReload, 3000);
     }
   }
 
@@ -298,7 +298,7 @@
       nextEpisode.click();
       setTimeout(updateEpisodeButtons, 2000);
       setTimeout(startEpisodePlayback, 2000);
-      scheduleCastReload();
+      setTimeout(scheduleCastReload, 3000);
     }
   }
 
