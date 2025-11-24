@@ -1274,7 +1274,7 @@
           usedTimeline
         });
       }
-      else
+      else if ((ratio !== null && (ratio + 0.02) >= AUTO_CAST_NEAR_END_RATIO) || ratio % 0.1 < 0.01 || ratio % 0.1 > 0.09)
       {
         console.log(AUTO_LOG_PREFIX, 'not nearEnd', { nearEnd,  ratio, remaining, key  });
       }
