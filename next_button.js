@@ -45,11 +45,42 @@
   const TIMELINE_PADDING_PX = 110;
   const PLAY_SVG_IDENTIFIER = '0.59375 0.48438';
   const NEXT_ICON_SVG = `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M5 5v14l8-7-8-7zm9 0v14h2V5h-2z"></path>
-    </svg>
+<svg fill="#ffffff" width="64px" height="64px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" stroke="#ffffff" stroke-width="0.00024000000000000003">
+<g id="SVGRepo_bgCarrier" stroke-width="0"/>
+<g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"/>
+<g id="SVGRepo_iconCarrier">
+<path d="M12,23A11,11,0,1,0,1,12,11.013,11.013,0,0,0,12,23ZM12,3a9,9,0,1,1-9,9A9.01,9.01,0,0,1,12,3Zm2,9L8,16V8Zm3,4H15V8h2Z"/>
+</g>
+</svg>
   `;
   const PREV_ICON_SVG = NEXT_ICON_SVG;
+  const ZOOM_OUT_SVG = `
+<svg width="64px" height="64px" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--gis" preserveAspectRatio="xMidYMid meet" fill="#ffffff" stroke="#ffffff">
+<g id="SVGRepo_bgCarrier" stroke-width="0"/>
+<g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"/>
+<g id="SVGRepo_iconCarrier">
+<path d="M37.18 0c-9.53 0-19.061 3.624-26.31 10.871c-14.495 14.495-14.495 38.122 0 52.617c13.57 13.568 35.1 14.367 49.687 2.528l3.576 3.576a3.956 5.958 45 0 0 .646 3.613L90.73 99.156a3.956 5.958 45 0 0 7.01-1.416a3.956 5.958 45 0 0 1.416-7.01l-25.95-25.95a3.956 5.958 45 0 0-3.616-.647l-3.576-3.576c11.839-14.588 11.043-36.118-2.526-49.686C56.241 3.624 46.71 0 37.18 0zm0 8.217c7.397 0 14.795 2.834 20.463 8.502a28.875 28.875 0 0 1 0 40.924a28.875 28.875 0 0 1-40.924 0a28.875 28.875 0 0 1 0-40.924c5.667-5.668 13.064-8.502 20.46-8.502zM19.68 32.18v10h35v-10h-35z" fill="#ffffff"/>
+</g>
+</svg>
+  `;
+  const ZOOM_IN_SVG = `
+<svg width="64px" height="64px" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--gis" preserveAspectRatio="xMidYMid meet" fill="#ffffff" stroke="#ffffff">
+<g id="SVGRepo_bgCarrier" stroke-width="0"/>
+<g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"/>
+<g id="SVGRepo_iconCarrier">
+<path d="M37.18 0c-9.53 0-19.061 3.624-26.31 10.871c-14.495 14.495-14.495 38.122 0 52.617c13.57 13.568 35.1 14.367 49.687 2.528l3.576 3.576a3.956 5.958 45 0 0 .646 3.613L90.73 99.156a3.956 5.958 45 0 0 7.01-1.416a3.956 5.958 45 0 0 1.416-7.01l-25.95-25.95a3.956 5.958 45 0 0-3.616-.647l-3.576-3.576c11.839-14.588 11.043-36.118-2.526-49.686C56.241 3.624 46.71 0 37.18 0zm0 8.217c7.397 0 14.795 2.834 20.463 8.502a28.875 28.875 0 0 1 0 40.924a28.875 28.875 0 0 1-40.924 0a28.875 28.875 0 0 1 0-40.924c5.667-5.668 13.064-8.502 20.46-8.502zm-5 11.463v12.5h-12.5v10h12.5v12.5h10v-12.5h12.5v-10h-12.5v-12.5h-10z" fill="#ffffff"/>
+</g>
+</svg>
+  `;
+  const ZOOM_RESET_SVG = `
+<svg fill="#ffffff" width="64px" height="64px" viewBox="-8 -2 30 30" role="img" focusable="false" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" stroke="#ffffff" stroke-width="0.00014">
+<g id="SVGRepo_bgCarrier" stroke-width="0"/>
+<g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"/>
+<g id="SVGRepo_iconCarrier">
+<path d="m 3.1566651,6.2246824 0.6674754,0 0,1.7621359 1.7684507,0 0,0.66748 -2.4359261,0 z m 5.5,-3.0703841 -2.4359261,0 0,0.66748 1.7684507,0 0,1.7621359 0.6674754,0 z m 0,3.0703841 -0.6674754,0 0,1.7621359 -1.7684507,0 0,0.66748 2.4359261,0 z m -5.5,-3.0703841 2.4359261,0 0,0.66748 -1.7684507,0 0,1.7621359 -0.6674754,0 z M 9.409996,2.4414063 c -1.92114,-1.92163005 -5.047381,-1.92163005 -6.968813,0 -1.921577,1.9211399 -1.921577,5.0475299 0,6.96881 1.855519,1.8554897 4.834556,1.9186397 6.767084,0.19043 l 0.390671,0.39082 c -0.09728,0.2489997 -0.04628,0.5424197 0.154807,0.7435297 l 2.061471,2.06145 c 0.270991,0.27116 0.710564,0.27116 0.98141,0 0.271165,-0.27085 0.271165,-0.71031 0,-0.98159 L 10.735329,9.7538263 c -0.201262,-0.20141 -0.494797,-0.25238 -0.743827,-0.15496 l -0.39067,-0.39081 c 1.728528,-1.93241 1.6648,-4.91145 -0.190836,-6.76665 z m -6.379938,6.38008 c -1.596673,-1.59649 -1.596673,-4.19476 0,-5.7914401 1.596528,-1.59667 4.19471,-1.59667 5.791354,0 1.596674,1.59668 1.596674,4.1949201 0,5.7914401 -1.596644,1.5964997 -4.194826,1.5964997 -5.791354,0 z"/>
+</g>
+</svg>
+  `;
   const ZOOM_STEP = 0.04;
   const MAX_ZOOM = 2;
   const MIN_ZOOM = -2;
@@ -95,7 +126,8 @@
   const episodeMediaCache = {};
   let lastEpisodeNavTs = 0;
   let pendingEpisodeKey = null;
-  const CAST_ICON_SVG = `
+
+  const CAST_ICON_SVG_INACTIVE = `
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <g>
         <path class="cast_caf_state_d" d="M1,18 L1,21 L4,21 C4,19.3 2.66,18 1,18 L1,18 Z"></path>
@@ -345,7 +377,11 @@
   function createZoomButton(id, label, tooltip, handler) {
     const button = document.createElement('pjsdiv');
     button.id = id;
-    button.textContent = label;
+    if (typeof label === 'string' && label.trim().startsWith('<svg')) {
+      button.innerHTML = label;
+    } else {
+      button.textContent = label;
+    }
     button.dataset.isHovered = 'false';
     button.dataset.tooltipBase = tooltip;
     button.title = tooltip;
@@ -359,9 +395,9 @@
   }
 
   function createZoomButtons() {
-    zoomOutButton = createZoomButton('zoom-out-button', '▬', 'Zoom video out', () => adjustVideoZoom(-ZOOM_STEP));
-    zoomResetButton = createZoomButton('zoom-reset-button', 'Z-Reset', 'Reset zoom', () => setVideoZoom(1));
-    zoomInButton = createZoomButton('zoom-in-button', '✚', 'Zoom video in', () => adjustVideoZoom(ZOOM_STEP));
+    zoomOutButton = createZoomButton('zoom-out-button', ZOOM_OUT_SVG, 'Zoom video out', () => adjustVideoZoom(-ZOOM_STEP));
+    zoomResetButton = createZoomButton('zoom-reset-button', ZOOM_RESET_SVG, 'Reset zoom', () => setVideoZoom(1));
+    zoomInButton = createZoomButton('zoom-in-button', ZOOM_IN_SVG, 'Zoom video in', () => adjustVideoZoom(ZOOM_STEP));
     [zoomOutButton, zoomResetButton, zoomInButton].forEach((button) => mountEpisodeButton(button));
     updateZoomButtonsState();
     refreshZoomTooltips();
@@ -782,7 +818,7 @@
     const hasFramework = Boolean(context || nativeButton);
     const casting = hasFramework && isCastSessionActive();
     const tooltip = casting ? 'Stop casting' : 'Start casting';
-    castToggleButton.innerHTML = casting ? CAST_ICON_SVG_ACTIVE : CAST_ICON_SVG;
+    castToggleButton.innerHTML = casting ? CAST_ICON_SVG_ACTIVE : CAST_ICON_SVG_INACTIVE;
     castToggleButton.title = tooltip;
     castToggleButton.setAttribute('aria-label', tooltip);
     castToggleButton.classList.toggle('is-disabled', !hasFramework);
@@ -1423,7 +1459,7 @@
     return casting;
   }
   function createCastToggleButton() {
-    castToggleButton = createEpisodeButton('cast-toggle-button', CAST_ICON_SVG, handleCastToggle);
+    castToggleButton = createEpisodeButton('cast-toggle-button', CAST_ICON_SVG_INACTIVE, handleCastToggle);
     const tooltip = 'Start casting';
     castToggleButton.title = tooltip;
     castToggleButton.setAttribute('aria-label', tooltip);

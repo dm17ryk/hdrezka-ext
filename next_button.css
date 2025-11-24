@@ -39,7 +39,9 @@
 
 #next-episode-button svg,
 #prev-episode-button svg,
-#cast-toggle-button svg {
+#cast-toggle-button svg,
+#zoom-out-button svg,
+#zoom-in-button svg {
     width: 80%;
     height: 80%;
     align-content: center;
@@ -53,6 +55,12 @@
 }
 
 #cast-toggle-button svg {
+    width: 70%;
+    height: 70%;
+}
+
+#zoom-out-button svg,
+#zoom-in-button svg {
     width: 70%;
     height: 70%;
 }
