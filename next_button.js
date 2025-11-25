@@ -396,6 +396,18 @@
       if (button.classList.contains('is-disabled')) return;
       handler();
     });
+    button.addEventListener(
+      'wheel',
+      (event) => {
+        if (button.dataset.isHovered !== 'true') return;
+        const direction = event.deltaY === 0 ? 0 : event.deltaY > 0 ? 1 : -1;
+        if (!direction) return;
+        event.preventDefault();
+        event.stopPropagation();
+        adjustVideoZoom(direction * ZOOM_STEP);
+      },
+      { passive: false }
+    );
     return button;
   }
 
