@@ -81,8 +81,10 @@
 </g>
 </svg>
   `;
-  const ZOOM_STEP = 0.04;
-  const MAX_ZOOM = 2;
+  const UPDATE_EPISODE_DELAY_MS = 2000;
+  const START_CAST_DELAY_MS = 3000;
+  const ZOOM_STEP = 0.02;
+  const MAX_ZOOM = 3;
   const MIN_ZOOM = -2;
   const ZOOM_PRECISION = 2;
   const ZOOM_COOKIE_PREFIX = 'hdrezka_zoom_';
@@ -95,11 +97,14 @@
   let endEventHooked = false;
   const AUTO_CAST_PREP_OFFSET_SEC = 1.2;
   const AUTO_CAST_NEXT_DELAY_MS = 300;
+  const POLL_CAST_STATE_MS = 800;
+  const AUTO_CAST_AUTO_ADVANCE_MS = 1000;
   const AUTO_CAST_PLAY_DELAY_MS = 2000;
   const AUTO_CAST_PLAY_RETRY_MS = 2000;
   const AUTO_CAST_SEEK_DELAY_MS = 300;
   const AUTO_CAST_MAX_RETRIES = 3;
   const AUTO_CAST_NEAR_END_RATIO = 0.99;
+  const AUTO_CAST_SEEK_VIA_TIMELINE = 0.001;
   const autoAdvanceState = {
     phase: 'idle', // idle | waiting_start | ensure_play
     key: null,
@@ -309,9 +314,9 @@
       pendingEpisodeKey = targetKey;
       lastEpisodeNavTs = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
       prevEpisode.click();
-      setTimeout(updateEpisodeButtons, 2000);
-      setTimeout(startEpisodePlayback, 2000);
-      setTimeout(scheduleCastReload, 3000);
+      setTimeout(updateEpisodeButtons, UPDATE_EPISODE_DELAY_MS);
+      setTimeout(startEpisodePlayback, UPDATE_EPISODE_DELAY_MS);
+      setTimeout(scheduleCastReload, START_CAST_DELAY_MS);
     }
   }
 
@@ -328,9 +333,9 @@
       pendingEpisodeKey = targetKey;
       lastEpisodeNavTs = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
       nextEpisode.click();
-      setTimeout(updateEpisodeButtons, 2000);
-      setTimeout(startEpisodePlayback, 2000);
-      setTimeout(scheduleCastReload, 3000);
+      setTimeout(updateEpisodeButtons, UPDATE_EPISODE_DELAY_MS);
+      setTimeout(startEpisodePlayback, UPDATE_EPISODE_DELAY_MS);
+      setTimeout(scheduleCastReload, START_CAST_DELAY_MS);
     }
   }
 
@@ -1284,7 +1289,7 @@
         autoAdvanceState.lastTime = Number.isFinite(times.time) ? times.time : 0;
         autoAdvanceState.lastRatio = Number.isFinite(ratio) ? ratio : 0;
         autoAdvanceState.waitStartUntil = now + AUTO_CAST_SEEK_DELAY_MS + 800;
-        const usedTimeline = seekViaTimeline(0.001);
+        const usedTimeline = seekViaTimeline(AUTO_CAST_SEEK_VIA_TIMELINE);
         if (!usedTimeline)
         {
           const api = getPlayerApi();
@@ -1331,7 +1336,7 @@
         autoAdvanceState.phase = 'ensure_play';
         autoAdvanceState.waitPlayUntil = now + AUTO_CAST_PLAY_DELAY_MS;
         autoAdvanceState.ensureAttempts = 0;
-        const beforeNextTimeline = seekViaTimeline(0.001);
+        const beforeNextTimeline = seekViaTimeline(AUTO_CAST_SEEK_VIA_TIMELINE);
         navigateToNextEpisode();
         console.log(AUTO_LOG_PREFIX, 'waiting_start->ensure_play', {
           progressed,
@@ -1925,8 +1930,8 @@
     updateEpisodeButtons();
     positionEpisodeButtons();
     setInterval(positionEpisodeButtons, LAYOUT_INTERVAL_MS);
-    setInterval(pollCastState, 800);
-    setInterval(maybeAutoAdvanceCast, 1000);
+    setInterval(pollCastState, POLL_CAST_STATE_MS);
+    setInterval(maybeAutoAdvanceCast, AUTO_CAST_AUTO_ADVANCE_MS);
     window.addEventListener('resize', positionEpisodeButtons);
     document.addEventListener('fullscreenchange', positionEpisodeButtons);
   }
