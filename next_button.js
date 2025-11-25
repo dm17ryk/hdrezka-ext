@@ -41,7 +41,8 @@
   let rewindButton;
   const observedEpisodes = new WeakSet();
   const LAYOUT_INTERVAL_MS = 800;
-  const BUTTON_MARGIN_PX = 12;
+  const NEXT_BUTTON_MARGIN_PX = 12;
+  const ALL_BUTTON_MARGIN_PX = 8;
   const TIMELINE_PADDING_PX = 110;
   const PLAY_SVG_IDENTIFIER = '0.59375 0.48438';
   const NEXT_ICON_SVG = `
@@ -1532,9 +1533,9 @@
       const buttons = getControlledButtons();
       const estimatedWidth = buttons.reduce((total, button, index) => {
         const width = parseFloat(button.style.width) || button.offsetWidth || 48;
-        const margin = index === 0 ? 0 : BUTTON_MARGIN_PX;
+        const margin = index === 0 ? 0 : ALL_BUTTON_MARGIN_PX;
         return total + width + margin;
-      }, BUTTON_MARGIN_PX * 2);
+      }, ALL_BUTTON_MARGIN_PX * 2);
       const padding = Math.max(TIMELINE_PADDING_PX, estimatedWidth);
       timeline.style.setProperty('padding-right', `${ padding }px`, 'important');
     }
@@ -1863,25 +1864,25 @@
       const nextSize = sizeMap.get(nextButton);
       const prevSize = sizeMap.get(prevButton);
       const nextLeft = playInfo.rect.left - playerRect.left - 2;
-      const top = playInfo.rect.top - playerRect.top - nextSize.height - BUTTON_MARGIN_PX + 3;
-      const prevLeft = nextLeft - prevSize.width - BUTTON_MARGIN_PX;
+      const top = playInfo.rect.top - playerRect.top - nextSize.height - NEXT_BUTTON_MARGIN_PX + 3;
+      const prevLeft = nextLeft - prevSize.width - NEXT_BUTTON_MARGIN_PX;
 
       const sharedTop = `${ Math.max(0, top) }px`;
-      const nextDisplayLeft = Math.max(BUTTON_MARGIN_PX, nextLeft) + 71;
-      const prevDisplayLeft = Math.max(BUTTON_MARGIN_PX, prevLeft) - 2;
+      const nextDisplayLeft = Math.max(NEXT_BUTTON_MARGIN_PX, nextLeft) + 71;
+      const prevDisplayLeft = Math.max(NEXT_BUTTON_MARGIN_PX, prevLeft) - 2;
 
       nextButton.style.left = `${ nextDisplayLeft }px`;
       nextButton.style.top = sharedTop;
       prevButton.style.left = `${ prevDisplayLeft }px`;
       prevButton.style.top = sharedTop;
 
-      let currentLeft = nextDisplayLeft + nextSize.width + BUTTON_MARGIN_PX;
+      let currentLeft = nextDisplayLeft + nextSize.width + ALL_BUTTON_MARGIN_PX;
       [zoomOutButton, zoomResetButton, zoomInButton, castToggleButton].forEach((button) => {
         if (!button) return;
         const buttonSize = sizeMap.get(button);
         button.style.left = `${ currentLeft }px`;
         button.style.top = sharedTop;
-        currentLeft += (buttonSize ? buttonSize.width : nextSize.width) + BUTTON_MARGIN_PX;
+        currentLeft += (buttonSize ? buttonSize.width : nextSize.width) + ALL_BUTTON_MARGIN_PX;
       });
 
       getControlledButtons().forEach((button) => {
@@ -1905,27 +1906,27 @@
     const anchorRect = anchorNode.getBoundingClientRect();
 
     const nextLeft = placeBefore
-      ? anchorRect.left - playerRect.left - fallbackWidth - BUTTON_MARGIN_PX
-      : anchorRect.right - playerRect.left + BUTTON_MARGIN_PX;
+      ? anchorRect.left - playerRect.left - fallbackWidth - NEXT_BUTTON_MARGIN_PX
+      : anchorRect.right - playerRect.left + NEXT_BUTTON_MARGIN_PX;
     const top = anchorRect.top - playerRect.top + (anchorRect.height - fallbackHeight) / 2;
 
-    const prevLeft = nextLeft - fallbackWidth - BUTTON_MARGIN_PX;
+    const prevLeft = nextLeft - fallbackWidth - NEXT_BUTTON_MARGIN_PX;
     const sharedTop = `${ Math.max(0, top) }px`;
-    const nextDisplayLeft = Math.max(BUTTON_MARGIN_PX, nextLeft);
-    const prevDisplayLeft = Math.max(BUTTON_MARGIN_PX, prevLeft);
+    const nextDisplayLeft = Math.max(NEXT_BUTTON_MARGIN_PX, nextLeft);
+    const prevDisplayLeft = Math.max(NEXT_BUTTON_MARGIN_PX, prevLeft);
 
     nextButton.style.left = `${ nextDisplayLeft }px`;
     nextButton.style.top = sharedTop;
     prevButton.style.left = `${ prevDisplayLeft }px`;
     prevButton.style.top = sharedTop;
 
-    let currentLeft = nextDisplayLeft + fallbackWidth + BUTTON_MARGIN_PX;
+    let currentLeft = nextDisplayLeft + fallbackWidth + ALL_BUTTON_MARGIN_PX;
     [zoomOutButton, zoomResetButton, zoomInButton, castToggleButton].forEach((button) => {
       if (!button) return;
       const buttonSize = sizeMap.get(button);
       button.style.left = `${ currentLeft }px`;
       button.style.top = sharedTop;
-      currentLeft += (buttonSize ? buttonSize.width : fallbackWidth) + BUTTON_MARGIN_PX;
+      currentLeft += (buttonSize ? buttonSize.width : fallbackWidth) + ALL_BUTTON_MARGIN_PX;
     });
 
     getControlledButtons().forEach((button) => {
