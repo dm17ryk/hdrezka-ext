@@ -1,6 +1,5 @@
 # HDRezka Comfort View
-
-<img width="1024" height="1024" alt="ChatGPT Image Nov 22, 2025, 02_55_46 PM" src="https://github.com/user-attachments/assets/3a3613de-c4a6-4030-b74f-cb249c48b63f" />
+<img width="1400" height="560" alt="marquee" src="https://github.com/user-attachments/assets/312870cf-e88d-4c2f-bb02-4ec145efd15e" />
 
 > Chrome extension that keeps HDRezka binge-friendly with floating episode controls, casting helpers, and per-show zoom memory.
 >
@@ -23,16 +22,13 @@
 - **Per-show zoom memory** – zoom levels persist in cookies using a `hdrezka_zoom_<slug>_s<season>` key, so each show-season combo keeps its own preference.
 
 ## Preview
-<img width="850" height="615" alt="next-button-look-new-30" src="https://github.com/user-attachments/assets/61b4a54f-16ce-46dc-84ca-6cf73f462781" />
-<img width="850" height="615" alt="next-button-look-new-31" src="https://github.com/user-attachments/assets/fe10bd6a-cd19-416e-afb2-36e081fd55da" />
-<img width="850" height="610" alt="next-button-look-new-32" src="https://github.com/user-attachments/assets/57e00611-cade-439a-8383-75e700bf68ae" />
-<img width="853" height="612" alt="next-button-look-new-33" src="https://github.com/user-attachments/assets/e89ea043-aa22-4826-99cd-aa1fed7dc64c" />
-<img width="851" height="613" alt="next-button-look-new-34" src="https://github.com/user-attachments/assets/c0ca078c-8c76-49ea-a5bd-558dfe6d2552" />
-<img width="851" height="613" alt="next-button-look-new-35" src="https://github.com/user-attachments/assets/9558e61f-e614-48aa-9d57-fbe7cafc5751" />
+<img width="1487" height="1007" alt="pre1" src="https://github.com/user-attachments/assets/37743805-cfbf-4457-82db-3121fd589aff" />
+<img width="1490" height="1005" alt="pre2" src="https://github.com/user-attachments/assets/4374f59d-c4d8-44c3-9800-223b9c904bcf" />
+<img width="1483" height="1006" alt="pre3" src="https://github.com/user-attachments/assets/6b6ad748-5b7b-437a-ac51-abf38b2c50c2" />
+<img width="1487" height="1005" alt="pre4" src="https://github.com/user-attachments/assets/90eb5db0-7a1c-43b8-9d4f-5ca25d869e21" />
 
 ## Preview Custing
-<img width="846" height="613" alt="next-button-look-new-36" src="https://github.com/user-attachments/assets/1a76b432-b1fa-475b-a73b-8b46b5e9f6c9" />
-<img width="851" height="613" alt="next-button-look-new-37" src="https://github.com/user-attachments/assets/ccb5f8af-a33f-4cc8-858a-34a16fb2e74f" />
+<img width="1486" height="1003" alt="pre5" src="https://github.com/user-attachments/assets/5a6ff8fe-a1ca-442a-bc48-f009332031fc" />
 
 ## Full Screen Preview (Zoom ratio 1 -> not zoomed)
 <img width="5118" height="1438" alt="next-button-look-new-38" src="https://github.com/user-attachments/assets/a9c54d88-36ac-4271-8557-4508eed2c971" />
