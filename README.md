@@ -11,15 +11,15 @@
 
 ## Features
 
-- **Instant prev/next episode buttons** – attaches to the in-player controls, reads the active episode in `.b-simple_episode__item`, and auto-clicks into the right list when seasons change.
-- **Automatic playback start** – after switching episodes the script nudges the hidden player start button to resume playback without extra clicks.
-- **Chromecast toggle** – a dedicated cast button sits with the player controls, mirrors the native cast state (inactive/active icons), and lets you start/stop casting without hunting the built-in icon.
-- **Cast-stable episode switching** – when casting, the extension caches the CDN manifest for each episode and reloads the correct stream into the active cast session when you go prev/next.
-- **Auto-advance on cast** – near the end of an episode (ratio ≈ 0.99) it seeks to the start to “prime” playback, clicks next, and ensures the new episode starts; if playback stalls it retries play.
-- **Context-aware tooltips & aria labels** – tooltips display `S#:E#` information and update whenever the active episode changes for better accessibility.
-- **Smart control layout** – buttons inherit player border radius, palette, and positioning, hiding themselves whenever the player UI is collapsed.
-- **Video zoom controls** – zoom in/out/reset buttons (±0.04 steps, clamped between 0.5x–2x) apply CSS transforms on the `<video>` element.
-- **Per-show zoom memory** – zoom levels persist in cookies using a `hdrezka_zoom_<slug>_s<season>` key, so each show-season combo keeps its own preference.
+- **Prev/Next episode buttons** – float alongside the player controls, follow the active season automatically, and disable themselves when there is no next/previous item.
+- **Auto-start after switching** – when you jump to another episode the extension taps the player’s play control so the new episode starts without extra clicks.
+- **Dedicated cast button** – mirrors the native Chromecast state (inactive/active icon) and lets you start or stop casting from the main control row.
+- **Cast-safe episode switching** – while casting, the extension remembers the CDN stream for each episode and reloads the correct one into the active cast session whenever you move prev/next.
+- **Auto-advance during cast** – near the end of an episode the extension preps the player, advances to the next episode, and retries play so casting continues hands-free.
+- **Rich tooltips and labels** – buttons show clear `S#:E#` hints and update whenever the active episode changes.
+- **Adaptive layout** – buttons match the player’s shape/colors, size themselves to the control bar, and hide when the native UI collapses.
+- **Video zoom controls** – zoom in/out/reset buttons apply a smooth scale to the video; each show-season pair remembers its own zoom level.
+- **Scroll-to-zoom** – while a zoom button is hovered, the mouse wheel adjusts zoom (wheel down to zoom in, wheel up to zoom out) without moving the page.
 
 ## Preview
 <img width="1487" height="1007" alt="pre1" src="https://github.com/user-attachments/assets/37743805-cfbf-4457-82db-3121fd589aff" />
@@ -52,13 +52,14 @@ The content script is injected on each of the following origins (including subdo
 
 ## Usage tips
 
-- Use the new **Prev**/**Next** icons that appear above the play button. They respect keyboard/mouse hover states and will disable themselves when no episode exists.
-- **Zoom in/out** with the ✚ and ▬ buttons; hit **Z-Reset** to jump back to 1×. Each show-season pair remembers its last zoom level.
-- The script continuously watches for DOM mutations and adjusts layout every 800 ms to keep buttons aligned with the player even when the site changes its UI.
-- **Casting**:
-  - The cast button mirrors native state (inactive/active icon) and uses the site’s Chromecast sender—no extra setup.
-  - When you go prev/next while casting, the extension caches the CDN manifest for each episode (from the page’s `initCDNSeriesEvents` call) and reloads the correct stream into the active cast session.
-  - Auto-advance: near the end (~99 % progress) it seeks to the start, clicks next, then ensures playback resumes on the new episode; if the cast doesn’t start immediately it issues a brief play retry.
+- **Prev/Next** – hover to see which episode will play (shows `S#:E#`); click to switch. The buttons disable themselves when you reach the ends of the list and auto-follow season changes.
+- **Zoom** – click zoom out / reset / zoom in to resize the video. Hover any zoom button and roll the mouse wheel: wheel down zooms in, wheel up zooms out. Your zoom preference is remembered per show and season; reset returns to default size.
+- **Casting**  
+  - Use the dedicated cast button to start or stop casting; its icon shows the current cast state.  
+  - When casting, switching episodes keeps the cast session alive and reloads the correct stream for the new episode automatically.  
+  - Near the end of an episode the extension preps the player, advances to the next episode, and retries play so casting keeps running with minimal intervention.
+- **Auto-start** – after any episode change, playback is nudged to start so you rarely need to press play yourself.
+- **Layout harmony** – buttons sit on the same control row as the native player, inherit its coloring, and hide whenever the player UI hides.
 
 ## Development notes
 
