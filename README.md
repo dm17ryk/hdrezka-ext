@@ -1,5 +1,5 @@
 # HDRezka Comfort View
-<img width="1400" height="560" alt="marquee" src="https://github.com/user-attachments/assets/312870cf-e88d-4c2f-bb02-4ec145efd15e" />
+<img width="100%" height="*" alt="promo" src="https://github.com/user-attachments/assets/78866de9-94f2-4398-8867-6aed3bba2902" />
 
 > Chrome extension that keeps HDRezka binge-friendly with floating episode controls, casting helpers, and per-show zoom memory.
 >
